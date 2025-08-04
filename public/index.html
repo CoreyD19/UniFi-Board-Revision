@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>UniFi Device Lookup</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      text-align: center;
+    }
+    input {
+      padding: 10px;
+      width: 300px;
+      font-size: 16px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin-left: 10px;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 15px;
+      text-align: left;
+      white-space: pre-wrap;
+      border-radius: 6px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>UniFi Device Lookup</h1>
+  <p>Enter the site description (e.g. <code>redr-shar-oh</code>):</p>
+  <input type="text" id="siteDesc" placeholder="Site description">
+  <button onclick="lookup()">Lookup Devices</button>
+  <pre id="output"></pre>
+
+  <script>
+    async function lookup() {
+      const site = document.getElementById("siteDesc").value;
+      const output = document.getElementById("output");
+      output.textContent = "⏳ Loading...";
+
+      try {
+        const res = await fetch("/get-devices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ site_desc: site })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          output.textContent = data.join("\n");
+        } else {
+          output.textContent = "❌ " + (data.error || "Unknown error");
+        }
+      } catch (err) {
+        output.textContent = "⚠️ Fetch failed: " + err.message;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -2,13 +2,21 @@ const express = require('express');
 const fetch = require('node-fetch');
 const cors = require('cors');
 const https = require('https');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
 const agent = new https.Agent({ rejectUnauthorized: false });
 
-app.use(cors()); // Allow frontend to access API
+app.use(cors());
 app.use(express.json());
+
+// Serve static frontend from /public
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/index.html'));
+});
 
 app.post('/get-devices', async (req, res) => {
   const siteDesc = req.body.site_desc?.trim();
@@ -19,7 +27,6 @@ app.post('/get-devices', async (req, res) => {
   if (!siteDesc) return res.status(400).json({ error: 'Missing site description' });
 
   try {
-    // 1. Login
     const loginRes = await fetch(`${baseURL}/api/login`, {
       method: 'POST',
       body: JSON.stringify({ username, password }),
@@ -30,7 +37,6 @@ app.post('/get-devices', async (req, res) => {
     const cookie = loginRes.headers.get('set-cookie');
     if (!cookie) return res.status(401).json({ error: 'Login failed' });
 
-    // 2. Get Sites
     const sitesRes = await fetch(`${baseURL}/api/self/sites`, {
       headers: { Cookie: cookie },
       agent
@@ -40,7 +46,6 @@ app.post('/get-devices', async (req, res) => {
     const site = sites.find(s => s.desc === siteDesc);
     if (!site) return res.status(404).json({ error: 'Site not found' });
 
-    // 3. Get Devices
     const devicesRes = await fetch(`${baseURL}/api/s/${site.name}/stat/device`, {
       headers: { Cookie: cookie },
       agent
