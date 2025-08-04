@@ -58,7 +58,7 @@ app.post('/get-devices', async (req, res) => {
 
     const base_url = 'https://unifi.nexuswifi.com:8443';
     const login_url = `${base_url}/api/login`;
-    const username = admin;
+    const username = "admin";
     const password = "rj1teqptmgmt25!";
 
     // Login
