@@ -1,8 +1,14 @@
 import express from 'express';
-import fetch from 'node-fetch';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ipaddr from 'ipaddr.js';
+
+import fetch from 'node-fetch';
+import fetchCookie from 'fetch-cookie';
+import tough from 'tough-cookie';
+
+const cookieJar = new tough.CookieJar();
+const fetchWithCookies = fetchCookie(fetch, cookieJar);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +18,7 @@ const port = process.env.PORT || 5000;
 
 app.use(express.json());
 
-// 🔒 Allow only your office IPs
+// IP filtering
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
   { ip: '71.66.161.195' }
@@ -41,10 +47,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// Static frontend
+// Serve frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Main API
+// Device API
 app.post('/get-devices', async (req, res) => {
   try {
     const siteDesc = req.body.site_desc?.trim();
@@ -55,39 +61,35 @@ app.post('/get-devices', async (req, res) => {
     const username = process.env.UNIFI_USERNAME;
     const password = process.env.UNIFI_PASSWORD;
 
-    // Login to UniFi
-    const loginResp = await fetch(login_url, {
+    // Login
+    const loginRes = await fetchWithCookies(login_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
       agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
-    if (!loginResp.ok) {
-      const errorText = await loginResp.text();
-      console.error('Login failed:', errorText);
+    const loginBody = await loginRes.json();
+    if (loginBody?.meta?.rc !== 'ok') {
+      console.error('Login failed:', loginBody);
       return res.status(401).json({ error: 'Login failed' });
     }
 
-    const cookie = loginResp.headers.get('set-cookie');
-
-    // Get list of sites
-    const sitesResp = await fetch(`${base_url}/api/self/sites`, {
-      headers: { Cookie: cookie },
+    // Get sites
+    const sitesRes = await fetchWithCookies(`${base_url}/api/self/sites`, {
       agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
-    const sites = (await sitesResp.json()).data;
+    const sites = (await sitesRes.json()).data;
     const site = sites.find(s => s.desc === siteDesc);
     if (!site) return res.status(404).json({ error: 'Site not found' });
 
     // Get devices
-    const devicesResp = await fetch(`${base_url}/api/s/${site.name}/stat/device`, {
-      headers: { Cookie: cookie },
+    const devicesRes = await fetchWithCookies(`${base_url}/api/s/${site.name}/stat/device`, {
       agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
-    const devices = (await devicesResp.json()).data;
+    const devices = (await devicesRes.json()).data;
     const output = devices.map(d => `${d.name || 'Unknown'} - Board Revision: ${d.board_rev || 'N/A'}`);
 
     res.json(output.sort());
