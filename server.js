@@ -1,63 +1,120 @@
-const express = require('express');
-const fetch = require('node-fetch');
-const cors = require('cors');
-const https = require('https');
-const path = require('path');
-require('dotenv').config();
+import express from 'express';
+import fetch from 'node-fetch';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import ipaddr from 'ipaddr.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const agent = new https.Agent({ rejectUnauthorized: false });
+const port = process.env.PORT || 5000;
 
-app.use(cors());
+// Middleware to parse JSON
 app.use(express.json());
 
-// Serve static frontend from /public
-app.use(express.static(path.join(__dirname, 'public')));
+// --- 🔐 IP Restriction Middleware ---
+const allowedRanges = [
+  { cidr: '216.196.237.57/29' }, // CIDR range (8 IPs)
+  { ip: '71.66.161.195' }        // Single IP
+];
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/index.html'));
-});
-
-app.post('/get-devices', async (req, res) => {
-  const siteDesc = req.body.site_desc?.trim();
-  const baseURL = 'https://unifi.nexuswifi.com:8443';
-  const username = process.env.UNIFI_USER;
-  const password = process.env.UNIFI_PASS;
-
-  if (!siteDesc) return res.status(400).json({ error: 'Missing site description' });
+function isAllowedIp(ip) {
+  // Normalize IPv6-wrapped IPv4 addresses (e.g. ::ffff:1.2.3.4)
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.replace('::ffff:', '');
+  }
 
   try {
-    const loginRes = await fetch(`${baseURL}/api/login`, {
+    const addr = ipaddr.parse(ip);
+    return allowedRanges.some(rule => {
+      if (rule.ip) {
+        return addr.toString() === rule.ip;
+      } else if (rule.cidr) {
+        const range = ipaddr.parseCIDR(rule.cidr);
+        return addr.match(range);
+      }
+      return false;
+    });
+  } catch (e) {
+    return false;
+  }
+}
+
+app.use((req, res, next) => {
+  const clientIp =
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+    req.socket.remoteAddress;
+
+  if (!isAllowedIp(clientIp)) {
+    console.warn(`Blocked IP: ${clientIp}`);
+    return res.status(403).send('Access Denied');
+  }
+
+  next();
+});
+
+// --- Static Frontend ---
+app.use(express.static(path.join(__dirname, 'public')));
+
+// --- POST Endpoint ---
+app.post('/get-devices', async (req, res) => {
+  try {
+    const siteDesc = req.body.site_desc?.trim();
+    if (!siteDesc) {
+      return res.status(400).json({ error: 'Missing site description.' });
+    }
+
+    const base_url = 'https://unifi.nexuswifi.com:8443';
+    const login_url = `${base_url}/api/login`;
+    const username = process.env.UNIFI_USERNAME;
+    const password = process.env.UNIFI_PASSWORD;
+
+    const session = await fetch(login_url, {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
       headers: { 'Content-Type': 'application/json' },
-      agent
+      body: JSON.stringify({ username, password }),
+      agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
-    const cookie = loginRes.headers.get('set-cookie');
-    if (!cookie) return res.status(401).json({ error: 'Login failed' });
+    if (!session.ok) {
+      return res.status(401).json({ error: 'Login failed' });
+    }
 
-    const sitesRes = await fetch(`${baseURL}/api/self/sites`, {
+    const cookie = session.headers.get('set-cookie');
+
+    const siteListRes = await fetch(`${base_url}/api/self/sites`, {
       headers: { Cookie: cookie },
-      agent
+      agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
-    const sites = (await sitesRes.json()).data;
-    const site = sites.find(s => s.desc === siteDesc);
-    if (!site) return res.status(404).json({ error: 'Site not found' });
+    const sites = (await siteListRes.json()).data;
+    const matching = sites.find(site => site.desc === siteDesc);
 
-    const devicesRes = await fetch(`${baseURL}/api/s/${site.name}/stat/device`, {
+    if (!matching) {
+      return res.status(404).json({ error: 'Site not found.' });
+    }
+
+    const devicesRes = await fetch(`${base_url}/api/s/${matching.name}/stat/device`, {
       headers: { Cookie: cookie },
-      agent
+      agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
     const devices = (await devicesRes.json()).data;
-    const result = devices.map(d => `${d.name} - Board Revision: ${d.board_rev || 'N/A'}`);
-    res.json(result.sort());
+    const output = devices.map(d => {
+      const name = d.name || 'Unknown';
+      const board = d.board_rev || 'N/A';
+      return `${name} - Board Revision: ${board}`;
+    });
+
+    return res.json(output.sort());
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
-const port = process.env.PORT || 5000;
-app.listen(port, () => console.log(`Server running on port ${port}`));
+// --- Start Server ---
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
