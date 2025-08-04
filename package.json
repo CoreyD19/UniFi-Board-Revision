@@ -2,7 +2,7 @@
   "name": "unifi-device-lookup",
   "version": "1.0.0",
   "main": "server.js",
-  "type": "module"
+  "type": "module",
   "scripts": {
     "start": "node server.js"
   },
