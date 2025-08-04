@@ -1,47 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>UniFi Device Lookup</title>
+  <meta charset="UTF-8" />
+  <title>Board Revision - Nexus Wifi</title>
   <style>
+    /* Colors */
+    :root {
+      --navy: #001f3f;       /* Navy blue */
+      --orange: #ff6600;     /* Orange bar */
+      --grey-bg: #f0f0f0;    /* Light grey background */
+      --input-outline: #999; /* Outline color */
+    }
+
     body {
-      font-family: sans-serif;
-      max-width: 600px;
-      margin: 50px auto;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--grey-bg);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    header {
+      width: 100%;
+      background-color: var(--navy);
+      padding: 20px 0;
       text-align: center;
+      color: white;
+      font-size: 2rem;
+      font-weight: bold;
+      user-select: none;
+      letter-spacing: 2px;
     }
-    input {
-      padding: 10px;
-      width: 300px;
-      font-size: 16px;
+
+    .separator {
+      width: 100%;
+      height: 8px;
+      background-color: var(--orange);
     }
+
+    main {
+      max-width: 600px;
+      padding: 30px 20px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 15px;
+      font-size: 1rem;
+      border: 2px solid var(--input-outline);
+      border-radius: 10px;
+      outline: none;
+      transition: border-color 0.3s;
+      box-sizing: border-box;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--orange);
+      box-shadow: 0 0 6px var(--orange);
+    }
+
     button {
-      padding: 10px 20px;
-      font-size: 16px;
-      margin-left: 10px;
+      margin-top: 15px;
+      padding: 12px 25px;
+      background-color: var(--navy);
+      color: white;
+      font-size: 1rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background-color 0.3s;
     }
-    pre {
-      background: #f4f4f4;
+
+    button:hover {
+      background-color: #003366;
+    }
+
+    pre#output {
+      margin-top: 25px;
+      background: white;
+      border-radius: 10px;
       padding: 15px;
-      text-align: left;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
       white-space: pre-wrap;
-      border-radius: 6px;
-      margin-top: 20px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 1rem;
+      color: #222;
     }
   </style>
 </head>
 <body>
-  <h1>UniFi Device Lookup</h1>
-  <p>Enter the site description (e.g. <code>redr-shar-oh</code>):</p>
-  <input type="text" id="siteDesc" placeholder="Site description">
-  <button onclick="lookup()">Lookup Devices</button>
-  <pre id="output"></pre>
+  <header>Nexus Wifi</header>
+  <div class="separator"></div>
+  <main>
+    <h1>Board Revision Lookup</h1>
+    <p>Enter the site description (e.g. <code>redr-shar-oh</code>):</p>
+    <input type="text" id="siteDesc" placeholder="Site description" />
+    <button onclick="lookup()">Lookup Devices</button>
+    <pre id="output"></pre>
+  </main>
 
   <script>
     async function lookup() {
-      const site = document.getElementById("siteDesc").value;
+      const site = document.getElementById("siteDesc").value.trim();
       const output = document.getElementById("output");
       output.textContent = "⏳ Loading...";
+
+      if (!site) {
+        output.textContent = "❗ Please enter a site description.";
+        return;
+      }
 
       try {
         const res = await fetch("/get-devices", {
