@@ -5,7 +5,7 @@ import https from 'https';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { wrapper } from 'fetch-cookie';
+import fetchCookie from 'fetch-cookie';
 
 const app = express();
 app.use(cors());
@@ -23,7 +23,7 @@ const password = 'rj1teqptmgmt25!'; // Replace with env vars for production
 
 // Wrap node-fetch to handle cookies automatically
 const cookieJar = new https.Agent({ rejectUnauthorized: false });
-const fetchWithCookie = wrapper(fetch, cookieJar);
+const fetchWithCookie = fetchCookie(fetch, cookieJar);
 
 // IP filtering setup
 const allowedRanges = [
