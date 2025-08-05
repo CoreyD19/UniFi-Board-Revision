@@ -2,155 +2,42 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Board Revision - Nexus Wifi</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-
-  <style>
-    :root {
-      --navy: #001f3f;
-      --orange: #ff6600;
-      --grey-bg: #f0f0f0;
-      --input-outline: #999;
-    }
-
-    body {
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background-color: var(--grey-bg);
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100vh;
-    }
-
-    header {
-      width: 100%;
-      background-color: var(--navy);
-      padding: 10px 0;
-      text-align: left;
-    }
-
-    header img {
-      height: 50px;
-      margin-left: 20px;
-    }
-
-    .separator {
-      width: 100%;
-      height: 8px;
-      background-color: var(--orange);
-    }
-
-    main {
-      max-width: 600px;
-      padding: 30px 20px;
-      width: 100%;
-      box-sizing: border-box;
-    }
-
-    h1 {
-      margin-top: 0;
-    }
-
-    input[type="text"] {
-      width: 100%;
-      padding: 12px 15px;
-      font-size: 1rem;
-      border: 2px solid var(--input-outline);
-      border-radius: 10px;
-      outline: none;
-      transition: border-color 0.3s;
-      box-sizing: border-box;
-    }
-
-    input[type="text"]:focus {
-      border-color: var(--orange);
-      box-shadow: 0 0 6px var(--orange);
-    }
-
-    button {
-      margin-top: 15px;
-      padding: 12px 25px;
-      background-color: var(--navy);
-      color: white;
-      font-size: 1rem;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background-color 0.3s;
-    }
-
-    button:hover {
-      background-color: #003366;
-    }
-
-    pre#output {
-      margin-top: 25px;
-      background: white;
-      border-radius: 10px;
-      padding: 15px;
-      box-shadow: 0 0 8px rgba(0,0,0,0.1);
-      white-space: pre-wrap;
-      max-height: 300px;
-      overflow-y: auto;
-      font-size: 1rem;
-      color: #222;
-    }
-  </style>
+  <title>Nexus Wifi - UniFi Tools</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="favicon.ico" />
 </head>
 <body>
- <header style="background: url('header-bg.jpg') no-repeat center center; background-size: cover; padding: 10px 0;">
-  <img src="NexusWifiLogo.png" alt="Nexus Wifi Logo" style="height: 50px; margin-left: 20px;">
-</header>
+  <header>
+    <img src="NexusWifiLogo.png" alt="Nexus Wifi Logo" />
+    <h1>Nexus Wifi</h1>
+  </header>
   <div class="separator"></div>
 
+  <nav>
+    <button id="tab-board" class="active">Board Revision</button>
+    <button id="tab-mac">MAC Lookup</button>
+  </nav>
+
   <main>
-    <h1>Board Revision Lookup</h1>
-    <p>Enter the site description (e.g. <code>redr-shar-oh</code>):</p>
-    <input type="text" id="siteDesc" placeholder="Site description" />
-    <button onclick="lookup()">Lookup Devices</button>
-    <pre id="output"></pre>
+    <section id="board-section">
+      <h2>Board Revision Lookup</h2>
+      <input type="text" id="site-input" placeholder="Enter site (e.g. redr-shar-oh)" />
+      <button id="lookup-board">Lookup</button>
+      <pre id="board-results"></pre>
+    </section>
+
+    <section id="mac-section" style="display:none;">
+      <h2>MAC Address Lookup</h2>
+      <input type="text" id="mac-input" placeholder="Enter MAC (e.g. 04:18:D6:07:DA:0A)" />
+      <button id="lookup-mac">Lookup</button>
+      <div id="progress-wrapper">
+        <div id="progress-bar"></div>
+      </div>
+      <p id="mac-status"></p>
+      <pre id="mac-results"></pre>
+    </section>
   </main>
 
-  <script>
-    async function lookup() {
-      const site = document.getElementById("siteDesc").value.trim();
-      const output = document.getElementById("output");
-      output.textContent = "⏳ Loading...";
-
-      if (!site) {
-        output.textContent = "❗ Please enter a site description.";
-        return;
-      }
-
-      try {
-        const res = await fetch("/get-devices", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ site_desc: site })
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-          output.textContent = data.join("\n");
-        } else {
-          output.textContent = "❌ " + (data.error || "Unknown error");
-        }
-      } catch (err) {
-        output.textContent = "⚠️ Fetch failed: " + err.message;
-      }
-    }
-
-    // Trigger lookup on Enter key
-    document.getElementById("siteDesc").addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        lookup();
-      }
-    });
-  </script>
+  <script src="script.js"></script>
 </body>
 </html>

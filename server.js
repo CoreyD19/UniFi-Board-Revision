@@ -1,27 +1,24 @@
 import express from 'express';
+import fetch from 'node-fetch';
+import ipaddr from 'ipaddr.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ipaddr from 'ipaddr.js';
-
-import fetch from 'node-fetch';
-import fetchCookie from 'fetch-cookie';
-import tough from 'tough-cookie';
-
-const cookieJar = new tough.CookieJar();
-const fetchWithCookies = fetchCookie(fetch, cookieJar);
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 
-app.use(express.json());
+// ─────────────────────────────────────────────────────────────
+// HARDCODED UNIFI CONTROLLER INFO
+const UNIFI_URL = 'https://unifi.nexuswifi.com:8443';
+const UNIFI_USERNAME = 'admin';
+const UNIFI_PASSWORD = 'rj1teqptmgmt25!';
 
-// IP filtering
+// ─────────────────────────────────────────────────────────────
+// IP FILTERING
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
-  { ip: '71.66.161.195' }
+  { ip: '71.66.161.195' },
+  { ip: '35.160.3.103' } // Render health check
 ];
 
 function isAllowedIp(ip) {
@@ -47,58 +44,114 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve frontend
+// ─────────────────────────────────────────────────────────────
+// STATIC FILES
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
-// Device API
-app.post('/get-devices', async (req, res) => {
+// ─────────────────────────────────────────────────────────────
+// LOGIN FUNCTION
+async function loginToController() {
+  const response = await fetch(`${UNIFI_URL}/api/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: UNIFI_USERNAME,
+      password: UNIFI_PASSWORD
+    }),
+    agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
+  });
+
+  if (!response.ok) throw new Error('Failed to login to UniFi controller');
+
+  return response.headers.get('set-cookie');
+}
+
+// ─────────────────────────────────────────────────────────────
+// BOARD REVISION ENDPOINT
+app.post('/board-revision', async (req, res) => {
   try {
-    const siteDesc = req.body.site_desc?.trim();
-    if (!siteDesc) return res.status(400).json({ error: 'Missing site description' });
+    const siteDesc = req.body.site?.trim();
+    if (!siteDesc) return res.status(400).json({ error: 'Missing site description.' });
 
-    const base_url = 'https://unifi.nexuswifi.com:8443';
-    const login_url = `${base_url}/api/login`;
-    const username = "admin";
-    const password = "rj1teqptmgmt25!";
+    const cookies = await loginToController();
 
-    // Login
-    const loginRes = await fetchWithCookies(login_url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+    const sitesRes = await fetch(`${UNIFI_URL}/api/self/sites`, {
+      headers: { Cookie: cookies },
       agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
-    const loginBody = await loginRes.json();
-    if (loginBody?.meta?.rc !== 'ok') {
-      console.error('Login failed:', loginBody);
-      return res.status(401).json({ error: 'Login failed' });
-    }
+    const { data: sites } = await sitesRes.json();
+    const targetSite = sites.find(site => site.desc === siteDesc);
+    if (!targetSite) return res.status(404).json({ error: 'Site not found' });
 
-    // Get sites
-    const sitesRes = await fetchWithCookies(`${base_url}/api/self/sites`, {
+    const devicesRes = await fetch(`${UNIFI_URL}/api/s/${targetSite.name}/stat/device`, {
+      headers: { Cookie: cookies },
       agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
     });
 
-    const sites = (await sitesRes.json()).data;
-    const site = sites.find(s => s.desc === siteDesc);
-    if (!site) return res.status(404).json({ error: 'Site not found' });
+    const { data: devices } = await devicesRes.json();
+    const result = devices.map(d => ({
+      name: d.name || 'Unknown',
+      board_rev: d.board_rev || 'N/A'
+    }));
 
-    // Get devices
-    const devicesRes = await fetchWithCookies(`${base_url}/api/s/${site.name}/stat/device`, {
-      agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
-    });
-
-    const devices = (await devicesRes.json()).data;
-    const output = devices.map(d => `${d.name || 'Unknown'} - Board Revision: ${d.board_rev || 'N/A'}`);
-
-    res.json(output.sort());
+    res.json(result.sort((a, b) => a.name.localeCompare(b.name)));
   } catch (err) {
-    console.error('Error in /get-devices:', err);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+// ─────────────────────────────────────────────────────────────
+// MAC ADDRESS LOOKUP ENDPOINT
+app.post('/mac-lookup', async (req, res) => {
+  try {
+    const targetMac = req.body.mac?.toLowerCase();
+    if (!targetMac) return res.status(400).json({ error: 'Missing MAC address.' });
+
+    const cookies = await loginToController();
+
+    const sitesRes = await fetch(`${UNIFI_URL}/api/self/sites`, {
+      headers: { Cookie: cookies },
+      agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
+    });
+
+    const { data: sites } = await sitesRes.json();
+
+    const results = [];
+    const batches = [];
+    const batchSize = 10;
+
+    for (let i = 0; i < sites.length; i += batchSize) {
+      batches.push(sites.slice(i, i + batchSize));
+    }
+
+    for (const batch of batches) {
+      const promises = batch.map(site =>
+        fetch(`${UNIFI_URL}/api/s/${site.name}/stat/device`, {
+          headers: { Cookie: cookies },
+          agent: new (await import('https')).Agent({ rejectUnauthorized: false }),
+        })
+          .then(r => r.json())
+          .then(json => {
+            const match = json.data.find(d => d.mac.toLowerCase() === targetMac);
+            if (match) results.push({ site: site.desc });
+          })
+      );
+
+      await Promise.allSettled(promises);
+    }
+
+    res.json({ results, totalSites: sites.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// START SERVER
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
