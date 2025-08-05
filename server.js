@@ -126,7 +126,7 @@ app.post('/board-revision', async (req, res) => {
   }
 });
 
-// MAC Address Lookup
+// MAC Lookup endpoint
 app.post('/mac-lookup', async (req, res) => {
   const { mac } = req.body;
   if (!mac) return res.json({ error: '❌ MAC address required.' });
@@ -135,27 +135,40 @@ app.post('/mac-lookup', async (req, res) => {
     await login();
     const sites = await getSites();
 
+    let foundSite = null;
+    const inputMac = mac.toLowerCase().replace(/[:-]/g, '');
+
     for (const site of sites) {
-      const resSta = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/stat/sta`, {
+      const deviceRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/stat/device`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        agent
       });
 
-      const json = await resSta.json();
-      const found = json.data.find(c => c.mac?.toLowerCase() === mac.toLowerCase());
+      const json = await deviceRes.json();
 
-      if (found) {
-        return res.json({ site: site.desc });
+      for (const d of json.data) {
+        const deviceMac = d.mac?.toLowerCase().replace(/[:-]/g, '');
+        if (deviceMac === inputMac) {
+          foundSite = site.desc;
+          break;
+        }
       }
+
+      if (foundSite) break;
     }
 
-    return res.json({ error: '❌ MAC address not found on any site.' });
+    if (foundSite) {
+      res.json({ site: foundSite });
+    } else {
+      res.json({ error: '❌ MAC address not found on any site.' });
+    }
+
   } catch (err) {
-    console.error('[MAC Lookup Error]', err);
-    return res.status(500).json({ error: '❌ Internal server error' });
+    console.error('[MAC Lookup Error]', err.message);
+    res.status(500).json({ error: '❌ Internal server error' });
   }
 });
+
 
 // Serve frontend
 app.get('/', (req, res) => {
