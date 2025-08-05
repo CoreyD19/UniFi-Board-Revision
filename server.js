@@ -1,20 +1,24 @@
 import express from 'express';
-import bodyParser from 'body-parser';
 import fetch from 'node-fetch';
 import ipaddr from 'ipaddr.js';
 import https from 'https';
+import cors from 'cors';
 
 const app = express();
-const port = process.env.PORT || 10000;
+app.use(cors());
+app.use(express.json());
 
-app.use(bodyParser.json());
-app.use(express.static('public'));
+const baseUrl = 'https://unifi.nexuswifi.com:8443';
+const username = 'admin';
+const password = 'rj1teqptmgmt25!'; // replace with process.env later
 
-// ===== IP Filtering =====
+// IP filtering
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
   { ip: '71.66.161.195' },
-  { ip: '35.160.199.141' } // Render health check IP
+  { ip: '127.0.0.1' }, // local dev
+  { ip: '::1' },       // IPv6 localhost
+  { ip: '35.160.204.44' }, // Render health check IP (example)
 ];
 
 function isAllowedIp(ip) {
@@ -40,25 +44,26 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===== Login & Site Fetch =====
-const baseUrl = 'https://unifi.nexuswifi.com:8443';
-const username = 'admin';
-const password = 'rj1teqptmgmt25!';
-
+// Login to UniFi controller
 async function login() {
-  const loginResponse = await fetch(`${baseUrl}/api/login`, {
+  const response = await fetch(`${baseUrl}/api/login`, {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
     agent: new https.Agent({ rejectUnauthorized: false })
   });
 
-  if (!loginResponse.ok) throw new Error('Login failed');
-  return loginResponse.headers.get('set-cookie');
+  if (!response.ok) {
+    throw new Error(`Login failed: ${response.statusText}`);
+  }
+
+  const cookies = response.headers.get('set-cookie');
+  return cookies;
 }
 
+// Get all sites
 async function getSites(cookies) {
-  const response = await fetch(`${baseUrl}/api/self/sites`, {
+  const res = await fetch(`${baseUrl}/api/self/sites`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -67,25 +72,23 @@ async function getSites(cookies) {
     agent: new https.Agent({ rejectUnauthorized: false })
   });
 
-  const data = await response.json();
-  return data.data;
+  const json = await res.json();
+  return json.data;
 }
 
-// ===== Board Revision Endpoint =====
-// Replace the /board-revision endpoint with this version
-
+// Board Revision endpoint
 app.post('/board-revision', async (req, res) => {
   const { site } = req.body;
-  if (!site) return res.json({ error: 'Site description required.' });
+  if (!site) return res.json({ error: '❌ Site description required.' });
 
   try {
     const cookies = await login();
     const sites = await getSites(cookies);
 
-    const siteObj = sites.find(s => s.desc?.toLowerCase() === site.toLowerCase());
-    if (!siteObj) return res.json({ error: `❌ Site not found: ${site}` });
+    const matchedSite = sites.find(s => s.desc?.toLowerCase() === site.toLowerCase());
+    if (!matchedSite) return res.json({ error: `❌ Site not found: ${site}` });
 
-    const deviceResponse = await fetch(`${baseUrl}/api/s/${siteObj.name}/stat/device`, {
+    const deviceRes = await fetch(`${baseUrl}/api/s/${matchedSite.name}/stat/device`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -94,64 +97,21 @@ app.post('/board-revision', async (req, res) => {
       agent: new https.Agent({ rejectUnauthorized: false })
     });
 
-    const deviceData = await deviceResponse.json();
-    const results = deviceData.data.map(d => {
+    const json = await deviceRes.json();
+    const result = json.data.map(d => {
       const name = d.name || 'Unknown';
       const rev = d.board_rev || 'N/A';
       return `${name} - Board Revision: ${rev}`;
     }).sort();
 
-    res.json({ results });
+    res.json({ results: result });
   } catch (err) {
-    console.error('Board Revision Error:', err.message);
+    console.error('[Board Revision Error]', err.message);
     res.status(500).json({ error: '❌ Internal server error' });
   }
 });
 
-
-// ===== MAC Lookup Endpoint =====
-app.post('/mac-lookup', async (req, res) => {
-  const { mac } = req.body;
-  if (!mac) return res.json({ error: 'MAC address required.' });
-
-  try {
-    const cookies = await login();
-    const sites = await getSites(cookies);
-
-    const total = sites.length;
-    let current = 0;
-    let foundSite = null;
-
-    for (const site of sites) {
-      current++;
-      const deviceResponse = await fetch(`${baseUrl}/api/s/${site.name}/stat/device`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': cookies
-        },
-        agent: new https.Agent({ rejectUnauthorized: false })
-      });
-
-      const deviceData = await deviceResponse.json();
-      const match = deviceData.data.find(d => d.mac?.toLowerCase() === mac.toLowerCase());
-      if (match) {
-        foundSite = site.desc;
-        break;
-      }
-    }
-
-    if (foundSite) {
-      res.json({ site: foundSite });
-    } else {
-      res.json({ error: '❌ Device not found.' });
-    }
-  } catch (err) {
-    console.error('MAC Lookup Error:', err.message);
-    res.status(500).json({ error: '❌ Internal server error' });
-  }
-});
-
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
