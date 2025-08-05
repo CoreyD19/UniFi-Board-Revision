@@ -22,8 +22,7 @@ const username = 'admin';
 const password = 'rj1teqptmgmt25!'; // Replace with env vars for production
 
 // Wrap node-fetch to handle cookies automatically
-const cookieJar = new https.Agent({ rejectUnauthorized: false });
-const fetchWithCookie = fetchCookie(fetch, cookieJar);
+const fetchWithCookie = fetchCookie(fetch);
 
 // IP filtering setup
 const allowedRanges = [
