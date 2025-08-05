@@ -126,7 +126,7 @@ app.post('/board-revision', async (req, res) => {
   }
 });
 
-// MAC Lookup endpoint
+// MAC Lookup endpoint (updated to match working Python logic)
 app.post('/mac-lookup', async (req, res) => {
   const { mac } = req.body;
   if (!mac) return res.json({ error: '❌ MAC address required.' });
@@ -134,21 +134,26 @@ app.post('/mac-lookup', async (req, res) => {
   try {
     await login();
     const sites = await getSites();
+    const sortedSites = sites.sort((a, b) => a.desc.localeCompare(b.desc));
 
     let foundSite = null;
     const inputMac = mac.toLowerCase().replace(/[:-]/g, '');
 
-    for (const site of sites) {
+    for (const site of sortedSites) {
       const deviceRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/stat/device`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        agent, // <-- THIS LINE IS CRITICAL
+        agent,
       });
 
-      const json = await deviceRes.json();
+      if (!deviceRes.ok) {
+        console.warn(`Failed to fetch devices for site ${site.name}: ${deviceRes.status}`);
+        continue;
+      }
 
-      for (const d of json.data) {
-        const deviceMac = d.mac?.toLowerCase().replace(/[:-]/g, '');
+      const json = await deviceRes.json();
+      for (const device of json.data) {
+        const deviceMac = device.mac?.toLowerCase().replace(/[:-]/g, '');
         if (deviceMac === inputMac) {
           foundSite = site.desc;
           break;
@@ -161,14 +166,14 @@ app.post('/mac-lookup', async (req, res) => {
     if (foundSite) {
       res.json({ site: foundSite });
     } else {
-      res.json({ error: '❌ MAC address not found on any site.' });
+      res.json({ error: '❌ MAC address not found on any UniFi device.' });
     }
-
   } catch (err) {
     console.error('[MAC Lookup Error]', err);
     res.status(500).json({ error: '❌ Internal server error' });
   }
 });
+
 
 
 // Serve frontend

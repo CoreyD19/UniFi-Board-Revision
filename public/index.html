@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>UniFi Tools - Nexus Wifi</title>
+  <title>UniFi Tool - Nexus Wifi</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="favicon.ico" />
 </head>
@@ -18,21 +18,32 @@
   </nav>
 
   <main>
+    <!-- BOARD REVISION SECTION -->
     <section id="board-section">
       <h2>Board Revision Lookup</h2>
       <input type="text" id="site-input" placeholder="Enter site (e.g. redr-shar-oh)" />
       <button id="lookup-board">Lookup</button>
+      <p id="board-error" class="error-text"></p>
       <pre id="board-results"></pre>
     </section>
 
+    <!-- MAC LOOKUP SECTION -->
     <section id="mac-section" style="display:none;">
       <h2>MAC Address Lookup</h2>
       <input type="text" id="mac-input" placeholder="Enter MAC (e.g. 04:18:D6:07:DA:0A)" />
       <button id="lookup-mac">Lookup</button>
+
       <div id="progress-wrapper">
         <div id="progress-bar"></div>
       </div>
-      <p id="mac-status"></p>
+
+      <div id="mac-progress-info">
+        <span id="site-counter"></span>
+        <span id="timer-up"></span>
+        <span id="timer-down"></span>
+      </div>
+
+      <p id="mac-status" class="error-text"></p>
       <pre id="mac-results"></pre>
     </section>
   </main>
