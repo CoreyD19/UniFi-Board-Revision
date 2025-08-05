@@ -3,16 +3,24 @@ import fetch from 'node-fetch';
 import ipaddr from 'ipaddr.js';
 import https from 'https';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve static files from the public folder
+app.use(express.static(path.join(__dirname, 'public')));
+
 const baseUrl = 'https://unifi.nexuswifi.com:8443';
 const username = 'admin';
-const password = 'rj1teqptmgmt25!'; // replace with process.env later
+const password = 'rj1teqptmgmt25!'; // Replace with env vars for production
 
-// IP filtering
+// IP filtering setup
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
   { ip: '71.66.161.195' },
@@ -44,7 +52,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Login to UniFi controller
+// Login function to UniFi controller
 async function login() {
   const response = await fetch(`${baseUrl}/api/login`, {
     method: 'POST',
@@ -109,6 +117,13 @@ app.post('/board-revision', async (req, res) => {
     console.error('[Board Revision Error]', err.message);
     res.status(500).json({ error: '❌ Internal server error' });
   }
+});
+
+// Add your MAC Lookup endpoint here if you have one
+
+// Serve index.html on root route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 const PORT = process.env.PORT || 10000;
