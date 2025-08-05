@@ -21,8 +21,11 @@ const baseUrl = 'https://unifi.nexuswifi.com:8443';
 const username = 'admin';
 const password = 'rj1teqptmgmt25!'; // Replace with env vars for production
 
-// Wrap node-fetch to handle cookies automatically
-const fetchWithCookie = fetchCookie(fetch);
+// Create the https agent to handle the self-signed certificate
+const agent = new https.Agent({ rejectUnauthorized: false });
+
+// Wrap node-fetch to handle cookies automatically and pass the agent
+const fetchWithCookie = fetchCookie(fetch, { agent });
 
 // IP filtering setup
 const allowedRanges = [
@@ -62,7 +65,6 @@ async function login() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
-    agent: new https.Agent({ rejectUnauthorized: false })
   });
 
   if (!response.ok) {
@@ -77,7 +79,6 @@ async function getSites() {
     headers: {
       'Content-Type': 'application/json'
     },
-    agent: new https.Agent({ rejectUnauthorized: false })
   });
 
   const json = await res.json();
@@ -101,7 +102,6 @@ app.post('/board-revision', async (req, res) => {
       headers: {
         'Content-Type': 'application/json'
       },
-      agent: new https.Agent({ rejectUnauthorized: false })
     });
 
     const json = await deviceRes.json();
@@ -133,7 +133,6 @@ app.post('/mac-lookup', async (req, res) => {
       const clientRes = await fetchWithCookie(`${baseUrl}/api/s/${site.name}/stat/sta`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        agent: new https.Agent({ rejectUnauthorized: false })
       });
 
       const json = await clientRes.json();
