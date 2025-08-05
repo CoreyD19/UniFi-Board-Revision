@@ -72,6 +72,7 @@ function lookupMac() {
   }
 
   statusBox.textContent = '🔄 Searching...';
+  statusBox.style.color = '';
   resultsBox.textContent = '';
   progressBar.style.width = '0%';
   siteCounter.textContent = '';
@@ -79,70 +80,96 @@ function lookupMac() {
   timerDown.textContent = '';
 
   let startTime = Date.now();
-  let intervalId = null;
-
-  intervalId = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    timerUp.textContent = `Elapsed: ${elapsed}s`;
-
-    // Estimate total time: ~20 min for 836 = ~1.43s/site
-    if (currentProgress && totalSites) {
-      const avgPerSite = (Date.now() - startTime) / currentProgress;
-      const remaining = Math.round((totalSites - currentProgress) * avgPerSite / 1000);
-      timerDown.textContent = `Remaining: ${remaining}s`;
-    }
-  }, 1000);
-
   let currentProgress = 0;
   let totalSites = 0;
+  let found = false;
+  let intervalId = setInterval(() => {
+    const elapsedMs = Date.now() - startTime;
+
+    function formatTime(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+      const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+      return `${minutes}:${seconds}`;
+    }
+
+    timerUp.textContent = `Elapsed: ${formatTime(elapsedMs)}`;
+
+    if (currentProgress > 0 && totalSites > 0) {
+      const avgPerSite = elapsedMs / currentProgress;
+      const remainingMs = Math.round((totalSites - currentProgress) * avgPerSite);
+      timerDown.textContent = `Remaining: ${formatTime(remainingMs)}`;
+    }
+  }, 1000);
 
   fetch('/mac-lookup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mac })
   })
-    .then(res => res.body.getReader())
-    .then(reader => {
+    .then(res => {
+      if (!res.body) throw new Error('ReadableStream not supported.');
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
-      const processText = ({ done, value }) => {
-        if (done) {
-          clearInterval(intervalId);
-          return;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        lines.forEach(line => {
-          if (line.startsWith('PROGRESS')) {
-            const [, curr, total] = line.trim().split(' ');
-            currentProgress = parseInt(curr);
-            totalSites = parseInt(total);
-            const percent = ((curr / total) * 100).toFixed(1);
-            progressBar.style.width = `${percent}%`;
-            siteCounter.textContent = `Checked: ${curr}/${total}`;
-          } else if (line.startsWith('FOUND')) {
-            const site = line.replace('FOUND ', '').trim();
-            resultsBox.textContent = `✅ Found at site: ${site}`;
-            statusBox.textContent = '';
+      function read() {
+        return reader.read().then(({ done, value }) => {
+          if (done) {
             clearInterval(intervalId);
-          } else if (line.startsWith('DONE')) {
-            if (!resultsBox.textContent) {
-              statusBox.textContent = '❌ Not found on any site.';
+            if (!found) {
+              statusBox.textContent = '❌ MAC address not found on any site.';
+              statusBox.style.color = 'red';
+              resultsBox.textContent = '';
             }
-            clearInterval(intervalId);
+            progressBar.style.width = '100%';
+            return;
           }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          lines.forEach(line => {
+            if (line.startsWith('PROGRESS')) {
+              const [, curr, total] = line.trim().split(' ');
+              currentProgress = parseInt(curr);
+              totalSites = parseInt(total);
+              const percent = ((currentProgress / totalSites) * 100).toFixed(1);
+              progressBar.style.width = `${percent}%`;
+              siteCounter.textContent = `Checked: ${currentProgress}/${totalSites}`;
+            } else if (line.startsWith('FOUND')) {
+              found = true;
+              // Backend sends: "FOUND Site Desc || Device Name"
+              const foundData = line.substring(6).split('||').map(s => s.trim());
+              const siteName = foundData[0] || 'Unknown Site';
+              const deviceName = foundData[1] || 'Unknown Device';
+
+              statusBox.textContent = `✅ Device found at site: ${siteName}`;
+              statusBox.style.color = 'green';
+              resultsBox.textContent = `📟 Device Name: ${deviceName}`;
+              resultsBox.style.color = 'green';
+              clearInterval(intervalId);
+            } else if (line.startsWith('DONE')) {
+              progressBar.style.width = '100%';
+              if (!found) {
+                statusBox.textContent = '❌ MAC address not found on any site.';
+                statusBox.style.color = 'red';
+                resultsBox.textContent = '';
+              }
+              clearInterval(intervalId);
+            }
+          });
+
+          return read();
         });
+      }
 
-        return reader.read().then(processText);
-      };
-
-      return reader.read().then(processText);
+      return read();
     })
     .catch(() => {
-      statusBox.textContent = '❌ Error during lookup.';
       clearInterval(intervalId);
+      statusBox.textContent = '❌ Error during lookup.';
+      statusBox.style.color = 'red';
     });
 }

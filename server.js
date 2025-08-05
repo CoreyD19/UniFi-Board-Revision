@@ -104,7 +104,6 @@ app.post('/board-revision', async (req, res) => {
   }
 });
 
-// MAC LOOKUP ENDPOINT (progress streaming)
 app.post('/mac-lookup', async (req, res) => {
   const { mac } = req.body;
   if (!mac) return res.json({ error: '❌ MAC address required.' });
@@ -134,7 +133,8 @@ app.post('/mac-lookup', async (req, res) => {
       const match = json.data.find(dev => dev.mac?.toLowerCase() === mac.toLowerCase());
 
       if (match) {
-        res.write(`FOUND ${site.desc}\n`);
+        const name = match.name || 'Unnamed Device';
+        res.write(`FOUND ${site.desc} || ${name}\n`);
         found = true;
         break;
       }
