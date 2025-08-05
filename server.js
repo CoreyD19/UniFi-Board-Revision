@@ -10,7 +10,7 @@ const port = process.env.PORT || 10000;
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-// ======== IP Filtering =========
+// ===== IP Filtering =====
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
   { ip: '71.66.161.195' },
@@ -40,12 +40,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// ======== Constants =========
+// ===== Login & Site Fetch =====
 const baseUrl = 'https://unifi.nexuswifi.com:8443';
 const username = 'admin';
 const password = 'rj1teqptmgmt25!';
 
-// ======== Login Function =========
 async function login() {
   const loginResponse = await fetch(`${baseUrl}/api/login`, {
     method: 'POST',
@@ -55,12 +54,9 @@ async function login() {
   });
 
   if (!loginResponse.ok) throw new Error('Login failed');
-
-  const cookies = loginResponse.headers.get('set-cookie');
-  return cookies;
+  return loginResponse.headers.get('set-cookie');
 }
 
-// ======== GET Sites =========
 async function getSites(cookies) {
   const response = await fetch(`${baseUrl}/api/self/sites`, {
     method: 'GET',
@@ -75,7 +71,7 @@ async function getSites(cookies) {
   return data.data;
 }
 
-// ======== Board Revision Endpoint =========
+// ===== Board Revision Endpoint =====
 app.post('/board-revision', async (req, res) => {
   const { site } = req.body;
   if (!site) return res.json({ error: 'Site description required.' });
@@ -85,7 +81,10 @@ app.post('/board-revision', async (req, res) => {
     const sites = await getSites(cookies);
 
     const siteObj = sites.find(s => s.desc?.toLowerCase() === site.toLowerCase());
-    if (!siteObj) return res.json({ error: `Site not found: ${site}` });
+    if (!siteObj) return res.json({ error: `❌ Site not found: ${site}` });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10 sec timeout
 
     const deviceResponse = await fetch(`${baseUrl}/api/s/${siteObj.name}/stat/device`, {
       method: 'GET',
@@ -93,8 +92,11 @@ app.post('/board-revision', async (req, res) => {
         'Content-Type': 'application/json',
         'Cookie': cookies
       },
-      agent: new https.Agent({ rejectUnauthorized: false })
+      agent: new https.Agent({ rejectUnauthorized: false }),
+      signal: controller.signal
     });
+
+    clearTimeout(timeout);
 
     const deviceData = await deviceResponse.json();
     const results = deviceData.data.map(d => {
@@ -105,12 +107,12 @@ app.post('/board-revision', async (req, res) => {
 
     res.json({ results });
   } catch (err) {
-    console.error('Error in /board-revision:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    console.error('Board Revision Error:', err.message);
+    res.status(500).json({ error: '❌ Internal server error' });
   }
 });
 
-// ======== MAC Lookup Endpoint =========
+// ===== MAC Lookup Endpoint =====
 app.post('/mac-lookup', async (req, res) => {
   const { mac } = req.body;
   if (!mac) return res.json({ error: 'MAC address required.' });
@@ -119,39 +121,37 @@ app.post('/mac-lookup', async (req, res) => {
     const cookies = await login();
     const sites = await getSites(cookies);
 
+    const total = sites.length;
+    let current = 0;
     let foundSite = null;
-    let counter = 0;
 
-    const searchPromises = sites.map(site =>
-      fetch(`${baseUrl}/api/s/${site.name}/stat/device`, {
+    for (const site of sites) {
+      current++;
+      const deviceResponse = await fetch(`${baseUrl}/api/s/${site.name}/stat/device`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Cookie': cookies
         },
         agent: new https.Agent({ rejectUnauthorized: false })
-      })
-        .then(response => response.json())
-        .then(data => {
-          counter++;
-          const match = data.data.find(d => d.mac?.toLowerCase() === mac.toLowerCase());
-          if (match && !foundSite) {
-            foundSite = site.desc;
-          }
-        })
-        .catch(err => console.warn(`Site ${site.name} failed:`, err.message))
-    );
+      });
 
-    await Promise.all(searchPromises);
+      const deviceData = await deviceResponse.json();
+      const match = deviceData.data.find(d => d.mac?.toLowerCase() === mac.toLowerCase());
+      if (match) {
+        foundSite = site.desc;
+        break;
+      }
+    }
 
     if (foundSite) {
       res.json({ site: foundSite });
     } else {
-      res.json({ error: 'Device not found.' });
+      res.json({ error: '❌ Device not found.' });
     }
   } catch (err) {
-    console.error('Error in /mac-lookup:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    console.error('MAC Lookup Error:', err.message);
+    res.status(500).json({ error: '❌ Internal server error' });
   }
 });
 
