@@ -26,10 +26,7 @@ const fetchWithCookies = fetchCookie(fetch, cookieJar, { agent });
 
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
-  { ip: '71.66.161.195' },
-  { ip: '127.0.0.1' },
-  { ip: '::1' },
-  { ip: '35.160.204.44' }, // Render health check
+  { ip: '71.66.161.195' }
 ];
 
 function isAllowedIp(ip) {
