@@ -12,18 +12,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Paths
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, 'public')));
 
-const baseUrl = 'https://unifi.nexuswifi.com:8443';
-const username = 'admin';
-const password = 'rj1teqptmgmt25!';
-
-const agent = new https.Agent({ rejectUnauthorized: false });
-const cookieJar = new tough.CookieJar();
-const fetchWithCookies = fetchCookie(fetch, cookieJar, { agent });
-
+// ✅ IP Filtering - BEFORE routes
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
   { ip: '71.66.161.195' }
@@ -52,6 +45,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// UniFi credentials
+const baseUrl = 'https://unifi.nexuswifi.com:8443';
+const username = 'admin';
+const password = 'rj1teqptmgmt25!';
+
+const agent = new https.Agent({ rejectUnauthorized: false });
+const cookieJar = new tough.CookieJar();
+const fetchWithCookies = fetchCookie(fetch, cookieJar, { agent });
+
+// Helper functions
 async function login() {
   const response = await fetchWithCookies(`${baseUrl}/api/login`, {
     method: 'POST',
@@ -70,7 +76,7 @@ async function getSites() {
   return json.data;
 }
 
-// BOARD REVISION ENDPOINT
+// ✅ BOARD REVISION ENDPOINT
 app.post('/board-revision', async (req, res) => {
   const { site } = req.body;
   if (!site) return res.json({ error: '❌ Site description required.' });
@@ -101,6 +107,7 @@ app.post('/board-revision', async (req, res) => {
   }
 });
 
+// ✅ MAC LOOKUP ENDPOINT
 app.post('/mac-lookup', async (req, res) => {
   const { mac } = req.body;
   if (!mac) return res.json({ error: '❌ MAC address required.' });
@@ -145,6 +152,7 @@ app.post('/mac-lookup', async (req, res) => {
   }
 });
 
+// Start server
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
