@@ -142,6 +142,7 @@ app.post('/mac-lookup', async (req, res) => {
       const deviceRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/stat/device`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
+        agent, // <-- THIS LINE IS CRITICAL
       });
 
       const json = await deviceRes.json();
@@ -164,7 +165,7 @@ app.post('/mac-lookup', async (req, res) => {
     }
 
   } catch (err) {
-    console.error('[MAC Lookup Error]', err.message);
+    console.error('[MAC Lookup Error]', err);
     res.status(500).json({ error: '❌ Internal server error' });
   }
 });
