@@ -72,6 +72,8 @@ async function getSites(cookies) {
 }
 
 // ===== Board Revision Endpoint =====
+// Replace the /board-revision endpoint with this version
+
 app.post('/board-revision', async (req, res) => {
   const { site } = req.body;
   if (!site) return res.json({ error: 'Site description required.' });
@@ -83,20 +85,14 @@ app.post('/board-revision', async (req, res) => {
     const siteObj = sites.find(s => s.desc?.toLowerCase() === site.toLowerCase());
     if (!siteObj) return res.json({ error: `❌ Site not found: ${site}` });
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10 sec timeout
-
     const deviceResponse = await fetch(`${baseUrl}/api/s/${siteObj.name}/stat/device`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'Cookie': cookies
       },
-      agent: new https.Agent({ rejectUnauthorized: false }),
-      signal: controller.signal
+      agent: new https.Agent({ rejectUnauthorized: false })
     });
-
-    clearTimeout(timeout);
 
     const deviceData = await deviceResponse.json();
     const results = deviceData.data.map(d => {
@@ -111,6 +107,7 @@ app.post('/board-revision', async (req, res) => {
     res.status(500).json({ error: '❌ Internal server error' });
   }
 });
+
 
 // ===== MAC Lookup Endpoint =====
 app.post('/mac-lookup', async (req, res) => {
