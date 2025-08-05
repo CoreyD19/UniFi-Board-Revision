@@ -5,6 +5,7 @@ import https from 'https';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { wrapper } from 'fetch-cookie';
 
 const app = express();
 app.use(cors());
@@ -20,12 +21,16 @@ const baseUrl = 'https://unifi.nexuswifi.com:8443';
 const username = 'admin';
 const password = 'rj1teqptmgmt25!'; // Replace with env vars for production
 
+// Wrap node-fetch to handle cookies automatically
+const cookieJar = new https.Agent({ rejectUnauthorized: false });
+const fetchWithCookie = wrapper(fetch, cookieJar);
+
 // IP filtering setup
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
   { ip: '71.66.161.195' },
   { ip: '127.0.0.1' }, // local dev
-  { ip: '::1' },       // IPv6 localhost
+  { ip: '::1' }, // IPv6 localhost
   { ip: '35.160.204.44' }, // Render health check IP (example)
 ];
 
@@ -54,7 +59,7 @@ app.use((req, res, next) => {
 
 // Login function to UniFi controller
 async function login() {
-  const response = await fetch(`${baseUrl}/api/login`, {
+  const response = await fetchWithCookie(`${baseUrl}/api/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -64,18 +69,14 @@ async function login() {
   if (!response.ok) {
     throw new Error(`Login failed: ${response.statusText}`);
   }
-
-  const cookies = response.headers.get('set-cookie');
-  return cookies;
 }
 
 // Get all sites
-async function getSites(cookies) {
-  const res = await fetch(`${baseUrl}/api/self/sites`, {
+async function getSites() {
+  const res = await fetchWithCookie(`${baseUrl}/api/self/sites`, {
     method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
-      'Cookie': cookies
+      'Content-Type': 'application/json'
     },
     agent: new https.Agent({ rejectUnauthorized: false })
   });
@@ -90,17 +91,16 @@ app.post('/board-revision', async (req, res) => {
   if (!site) return res.json({ error: '❌ Site description required.' });
 
   try {
-    const cookies = await login();
-    const sites = await getSites(cookies);
+    await login();
+    const sites = await getSites();
 
     const matchedSite = sites.find(s => s.desc?.toLowerCase() === site.toLowerCase());
     if (!matchedSite) return res.json({ error: `❌ Site not found: ${site}` });
 
-    const deviceRes = await fetch(`${baseUrl}/api/s/${matchedSite.name}/stat/device`, {
+    const deviceRes = await fetchWithCookie(`${baseUrl}/api/s/${matchedSite.name}/stat/device`, {
       method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
-        'Cookie': cookies
+        'Content-Type': 'application/json'
       },
       agent: new https.Agent({ rejectUnauthorized: false })
     });
@@ -119,7 +119,44 @@ app.post('/board-revision', async (req, res) => {
   }
 });
 
-// Add your MAC Lookup endpoint here if you have one
+// MAC Lookup endpoint
+app.post('/mac-lookup', async (req, res) => {
+  const { mac } = req.body;
+  if (!mac) return res.json({ error: '❌ MAC address required.' });
+
+  try {
+    await login();
+    const sites = await getSites();
+
+    let foundSite = null;
+
+    for (const site of sites) {
+      const clientRes = await fetchWithCookie(`${baseUrl}/api/s/${site.name}/stat/sta`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        agent: new https.Agent({ rejectUnauthorized: false })
+      });
+
+      const json = await clientRes.json();
+      const client = json.data.find(c => c.mac?.toLowerCase() === mac.toLowerCase());
+
+      if (client) {
+        foundSite = site.desc;
+        break; // Exit the loop once the MAC is found
+      }
+    }
+
+    if (foundSite) {
+      res.json({ site: foundSite });
+    } else {
+      res.json({ error: '❌ MAC address not found on any site.' });
+    }
+
+  } catch (err) {
+    console.error('[MAC Lookup Error]', err.message);
+    res.status(500).json({ error: '❌ Internal server error' });
+  }
+});
 
 // Serve index.html on root route
 app.get('/', (req, res) => {
