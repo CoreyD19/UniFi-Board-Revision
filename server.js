@@ -19,7 +19,8 @@ const __dirname = path.dirname(__filename);
 // ✅ IP Filtering - BEFORE routes
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
-  { ip: '71.66.161.195' }
+  { ip: '71.66.161.195' },
+	{ ip: '216.144.248.28'}
 ];
 
 function isAllowedIp(ip) {
