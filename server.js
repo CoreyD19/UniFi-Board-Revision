@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
   { ip: '71.66.161.195' },
-	{ ip: '216.144.248.28'}
+	{ ip: '216.24.57.7'}
 ];
 
 function isAllowedIp(ip) {
