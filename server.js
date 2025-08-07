@@ -20,7 +20,9 @@ const __dirname = path.dirname(__filename);
 const allowedRanges = [
     { cidr: '216.196.237.57/29' },
     { ip: '71.66.161.195' },
-    { ip: '::1' }
+    { ip: '127.0.0.1' }, // local dev
+    { ip: '::1' }, // IPv6 localhost
+    { ip: '35.160.204.44' }, // Render health check IP (example)
 ];
 
 function isAllowedIp(ip) {
@@ -64,7 +66,6 @@ async function login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
-        agent, // Keep agent here for initial login if needed, though fetchCookie handles it for subsequent calls
     });
     if (!response.ok) {
         throw new Error(`Login failed: ${response.statusText}`);
@@ -72,7 +73,7 @@ async function login() {
 }
 
 async function getSites() {
-    const res = await fetchWithCookies(`${baseUrl}/api/self/sites`, { agent }); // Keep agent here for initial sites call if needed
+    const res = await fetchWithCookies(`${baseUrl}/api/self/sites`);
     const json = await res.json();
     return json.data;
 }
@@ -91,7 +92,6 @@ app.post('/board-revision', async (req, res) => {
         const deviceRes = await fetchWithCookies(`${baseUrl}/api/s/${matchedSite.name}/stat/device`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
-            agent // Keep agent here
         });
 
         const json = await deviceRes.json();
@@ -113,9 +113,9 @@ app.post('/mac-lookup', async (req, res) => {
     const { mac } = req.body;
     if (!mac) return res.json({ error: '❌ MAC address required.' });
 
-    res.setHeader('Content-Type', 'text/plain'); // Set content type for streaming updates
-    res.setHeader('Cache-Control', 'no-cache'); // Prevent caching of the stream
-    res.setHeader('Connection', 'keep-alive'); // Keep connection open for streaming
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
 
     try {
         await login();
@@ -123,17 +123,16 @@ app.post('/mac-lookup', async (req, res) => {
         const sortedSites = sites.sort((a, b) => a.desc.localeCompare(b.desc));
         const totalSites = sortedSites.length;
 
-        let found = false; // Flag to signal if MAC is found by any concurrent search
-        let sitesProcessed = 0; // Shared counter for overall progress
+        let found = false;
+        let sitesProcessed = 0;
 
         const midpoint = Math.ceil(totalSites / 2);
         const firstHalf = sortedSites.slice(0, midpoint);
         const secondHalf = sortedSites.slice(midpoint);
 
-        // Function to search a portion of sites (either forward or backward)
         const searchSites = async (sitesToSearch, isReverse = false) => {
             for (let i = 0; i < sitesToSearch.length; i++) {
-                if (found) { // If MAC is found by another thread, stop this one
+                if (found) {
                     break;
                 }
 
@@ -144,49 +143,42 @@ app.post('/mac-lookup', async (req, res) => {
                     const clientRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/stat/sta`, {
                         method: 'GET',
                         headers: { 'Content-Type': 'application/json' },
-                        agent // Ensure agent is used for these calls as well
                     });
 
                     const json = await clientRes.json();
                     const match = json.data.find(dev => dev.mac?.toLowerCase() === mac.toLowerCase());
 
                     if (match) {
-                        if (!found) { // Ensure only the first one to find writes the result
+                        if (!found) {
                             found = true;
                             const name = match.name || 'Unnamed Device';
                             res.write(`FOUND ${site.desc} || ${name}\n`);
-                            res.end(); // End the response stream immediately
+                            res.end();
                         }
-                        return; // Exit this search function
+                        return;
                     }
                 } catch (err) {
                     console.error(`[MAC Lookup Site Error - ${site.desc}]`, err.message);
-                    // Continue to the next site even if one fails
                 }
 
-                // Safely increment and report progress
                 sitesProcessed++;
-                // Use a temporary variable to avoid race conditions on res.write
                 const currentProgress = sitesProcessed;
                 const totalProgress = totalSites;
                 res.write(`PROGRESS ${currentProgress} ${totalProgress}\n`);
             }
         };
 
-        // Run both searches concurrently
         await Promise.all([
-            searchSites(firstHalf, false), // Search from front to midpoint
-            searchSites(secondHalf, true)  // Search from back to midpoint in reverse
+            searchSites(firstHalf, false),
+            searchSites(secondHalf, true)
         ]);
 
-        // If not found by either search and the response stream is still open
         if (!found && !res.headersSent) {
             res.write('NOT_FOUND\n');
             res.end();
         }
     } catch (err) {
         console.error('[MAC Lookup Error]', err.message);
-        // Ensure response is sent even on outer catch
         if (!res.headersSent) {
             res.status(500).send('❌ Internal server error');
         }
