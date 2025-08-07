@@ -83,19 +83,19 @@ function lookupMac() {
   let currentProgress = 0;
   let totalSites = 0;
   let found = false;
+
+  const formatTime = ms => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  };
+
   let intervalId = setInterval(() => {
     const elapsedMs = Date.now() - startTime;
-
-    function formatTime(ms) {
-      const totalSeconds = Math.floor(ms / 1000);
-      const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-      const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-      return `${minutes}:${seconds}`;
-    }
-
     timerUp.textContent = `Elapsed: ${formatTime(elapsedMs)}`;
 
-    if (currentProgress > 0 && totalSites > 0) {
+    if (currentProgress > 0 && totalSites > 0 && !found) {
       const avgPerSite = elapsedMs / currentProgress;
       const remainingMs = Math.round((totalSites - currentProgress) * avgPerSite);
       timerDown.textContent = `Remaining: ${formatTime(remainingMs)}`;
@@ -140,7 +140,6 @@ function lookupMac() {
               siteCounter.textContent = `Checked: ${currentProgress}/${totalSites}`;
             } else if (line.startsWith('FOUND')) {
               found = true;
-              // Backend sends: "FOUND Site Desc || Device Name"
               const foundData = line.substring(6).split('||').map(s => s.trim());
               const siteName = foundData[0] || 'Unknown Site';
               const deviceName = foundData[1] || 'Unknown Device';
@@ -149,7 +148,9 @@ function lookupMac() {
               statusBox.style.color = 'green';
               resultsBox.textContent = `📟 Device Name: ${deviceName}`;
               resultsBox.style.color = 'green';
+
               clearInterval(intervalId);
+              timerDown.textContent = `Remaining: 00:00`;
             } else if (line.startsWith('DONE')) {
               progressBar.style.width = '100%';
               if (!found) {
