@@ -73,64 +73,79 @@ app.post('/mac-lookup', async (req, res) => {
       return res.status(401).json({ error: 'Login failed' });
     }
 
-    const sitesRes = await fetchWithCookies(`${base_url}/api/self/sites`, { agent });
-    const sites = (await sitesRes.json()).data;
-    const siteCount = sites.length;
-    let checked = 0;
-    let found = false;
-    const startTime = Date.now();
+// Inside your existing app.post('/mac-lookup', ...) handler
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+const sitesRes = await fetchWithCookies(`${base_url}/api/self/sites`, { agent });
+const sites = (await sitesRes.json()).data;
+const siteCount = sites.length;
+let checked = 0;
+let found = false;
+const startTime = Date.now();
 
-    function sendUpdate(site, deviceName) {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      const remaining = found ? 0 : Math.max(0, Math.floor((elapsed / checked) * (siteCount - checked)));
-      const percent = Math.round((checked / siteCount) * 100);
-      const elapsedMinSec = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
-      const remainingMinSec = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`;
+res.setHeader('Content-Type', 'text/event-stream');
+res.setHeader('Cache-Control', 'no-cache');
+res.setHeader('Connection', 'keep-alive');
 
-      res.write(`data: ${JSON.stringify({
-        checked,
-        total: siteCount,
-        percent,
-        elapsed: elapsedMinSec,
-        remaining: remainingMinSec,
-        site,
-        deviceName,
-        found
-      })}\n\n`);
-    }
+function sendUpdate(site, deviceName) {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const remaining = found ? 0 : Math.max(0, Math.floor((elapsed / (checked || 1)) * (siteCount - checked)));
+  const percent = Math.round((checked / siteCount) * 100);
+  const elapsedMinSec = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+  const remainingMinSec = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`;
 
-    const searchSites = async (siteList) => {
-      for (const site of siteList) {
-        if (found) break;
-        const devicesRes = await fetchWithCookies(`${base_url}/api/s/${site.name}/stat/device`, { agent });
-        const devices = (await devicesRes.json()).data;
-        checked++;
+  res.write(`data: ${JSON.stringify({
+    checked,
+    total: siteCount,
+    percent,
+    elapsed: elapsedMinSec,
+    remaining: remainingMinSec,
+    site,
+    deviceName,
+    found
+  })}\n\n`);
+}
 
-        const match = devices.find(d => d.mac?.toLowerCase() === mac.toLowerCase());
-        if (match) {
-          found = true;
-          sendUpdate(site.desc, match.name || 'Unknown');
-          break;
-        } else {
-          sendUpdate(null, null);
-        }
+const midpoint = Math.floor(siteCount / 2);
+const firstHalf = sites.slice(0, midpoint);
+const secondHalf = sites.slice().reverse().slice(0, siteCount - midpoint);
+
+// Shared lock object to exit both when found
+const searchSites = async (siteList) => {
+  for (const site of siteList) {
+    if (found) break;
+    try {
+      const devicesRes = await fetchWithCookies(`${base_url}/api/s/${site.name}/stat/device`, { agent });
+      const devices = (await devicesRes.json()).data;
+      const match = devices.find(d => d.mac?.toLowerCase() === mac.toLowerCase());
+
+      checked++;
+
+      if (match && !found) {
+        found = true;
+        sendUpdate(site.desc, match.name || 'Unknown');
+        break;
+      } else {
+        sendUpdate(null, null);
       }
-    };
+    } catch (err) {
+      checked++;
+      sendUpdate(null, null);
+    }
+  }
+};
 
-    const midpoint = Math.floor(siteCount / 2);
-    const firstHalf = sites.slice(0, midpoint);
-    const secondHalf = sites.slice().reverse().slice(0, siteCount - midpoint);
+await Promise.all([
+  searchSites(firstHalf),
+  searchSites(secondHalf)
+]);
 
-    await Promise.all([
-      searchSites(firstHalf),
-      searchSites(secondHalf)
-    ]);
+if (!found) {
+  // Final message if not found
+  sendUpdate(null, null);
+}
 
-    res.end();
+res.end();
+
   } catch (err) {
     console.error('MAC Lookup error:', err);
     res.status(500).json({ error: 'Internal Server Error' });
