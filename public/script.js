@@ -79,8 +79,8 @@ function lookupMac() {
   })
     .then(res => res.text())
     .then(text => {
-      if (text.startsWith('FOUND')) {
-        const foundData = text.substring(6).split('||').map(s => s.trim());
+      if (text.startsWith('DONE')) {
+        const foundData = text.substring(5).split('||').map(s => s.trim());
         const siteName = foundData[0] || 'Unknown Site';
         const deviceName = foundData[1] || 'Unknown Device';
 
