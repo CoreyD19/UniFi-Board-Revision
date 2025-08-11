@@ -231,9 +231,9 @@ if (!existingNetworksRes.ok) {
 const existingNetworksJson = await existingNetworksRes.json();
 const existingNetworks = existingNetworksJson.data || [];
 
-// 2. Check if network name already exists
-if (existingNetworks.some(net => net.name.toLowerCase() === networkName.toLowerCase())) {
-  throw new Error(`Network name '${networkName}' already exists. Please choose a different network name.`);
+// 2. Check if network name already exists (case-insensitive, trimmed)
+if (existingNetworks.some(net => net.name?.trim().toLowerCase() === networkName.trim().toLowerCase())) {
+  return res.status(400).json({ error: `❌ Network name '${networkName.trim()}' already exists.` });
 }
 
 // 3. Fetch existing WLANs
@@ -251,9 +251,9 @@ if (!existingWlanRes.ok) {
 const existingWlansJson = await existingWlanRes.json();
 const existingWlans = existingWlansJson.data || [];
 
-// 4. Check if SSID already exists
-if (existingWlans.some(wlan => wlan.ssid && wlan.ssid.toLowerCase() === ssid.toLowerCase())) {
-  throw new Error(`WiFi SSID '${ssid}' already exists. Please choose a different SSID.`);
+// 4. Check if SSID already exists (case-insensitive, trimmed)
+if (existingWlans.some(wlan => wlan.ssid?.trim().toLowerCase() === ssid.trim().toLowerCase())) {
+  return res.status(400).json({ error: `❌ SSID '${ssid.trim()}' already exists.` });
 }
 
 // --- Create Network in UniFi ---
