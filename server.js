@@ -241,27 +241,7 @@ const netJson = await netRes.json();
 const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
 const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
 
-// --- Fetch AP groups to get valid apgroup_id ---
-const apGroupsRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/apgroups`, {
-  method: 'GET',
-  headers: { 'Content-Type': 'application/json' },
-  agent
-});
 
-if (!apGroupsRes.ok) {
-  const txt = await apGroupsRes.text().catch(() => '');
-  throw new Error(`Failed to get AP groups: ${apGroupsRes.status} ${apGroupsRes.statusText} ${txt}`);
-}
-
-const apGroupsJson = await apGroupsRes.json();
-const apGroups = Array.isArray(apGroupsJson) ? apGroupsJson : apGroupsJson.data;
-const defaultApGroup = apGroups.find(g => g.name === 'Default' || g.name === 'All' || g.default === true);
-
-if (!defaultApGroup) {
-  throw new Error('Default AP group not found.');
-}
-
-const apGroupId = defaultApGroup._id;
 
 // --- Create WLAN in UniFi ---
 // The WLAN needs a reference to the networkconf; different controllers expect networkconf_id or mapping via 'vlan'
