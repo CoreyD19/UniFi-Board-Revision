@@ -256,15 +256,17 @@ if (!wlanRes.ok) {
 const wlanJson = await wlanRes.json();
 const wlanConfs = wlanJson.data || [];
 
+console.log('Existing WLAN configs:', JSON.stringify(wlanConfs, null, 2));
+
 if (wlanConfs.length === 0) {
   throw new Error('No existing WLAN configurations found to get apgroup_id from.');
 }
 
-const apGroupWlan = wlanConfs.find(w => w.apgroup_id) || wlanConfs[0];
-const apGroupId = apGroupWlan.apgroup_id;
+const apGroupWlan = wlanConfs.find(w => w.apgroup_id || w.ap_group_id) || wlanConfs[0];
+const apGroupId = apGroupWlan?.apgroup_id || apGroupWlan?.ap_group_id || '';
 
 if (!apGroupId) {
-  throw new Error('No apgroup_id found on existing WLANs.');
+  console.warn('No apgroup_id found on existing WLANs, proceeding without it.');
 }
 
 // --- Create WLAN in UniFi ---
@@ -276,10 +278,12 @@ const wlanPayload = {
   security: 'wpapsk',
   wpa: 2,
   wpa_mode: 'wpa2',
-  wpa_psk: pass,
-  apgroup_id: apGroupId
+  wpa_psk: pass
 };
 
+if (apGroupId) {
+  wlanPayload.apgroup_id = apGroupId;
+}
 
 // Attach the WLAN to the VLAN/network. Try common field names if available
 if (networkId) {
@@ -288,17 +292,18 @@ if (networkId) {
   wlanPayload.vlan = parseInt(vlanId, 10);
 }
 
-const existingWlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
+const wlanCreateRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(wlanPayload),
   agent
 });
 
-if (!existingWlanRes.ok) {
-  const txt = awaitexistingWlanRes.text().catch(() => '');
-  throw new Error(`Failed to create wlan: ${existingWlanRes.status} ${existingWlanRes.statusText} ${txt}`);
+if (!wlanCreateRes.ok) {
+  const txt = await wlanCreateRes.text().catch(() => '');
+  throw new Error(`Failed to create wlan: ${wlanCreateRes.status} ${wlanCreateRes.statusText} ${txt}`);
 }
+
 
     // --- Build Mikrotik script output ---
     // networkBase is like 192.168.50.0
