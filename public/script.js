@@ -125,12 +125,26 @@ async function loadVlanSites() {
     const data = await res.json();
     if (data.sites) {
       vlanSites = data.sites;
-      renderVlanSiteList(vlanSites);
+      // Do NOT render full list on load, wait for user input
+      vlanSiteList.innerHTML = '';
     }
   } catch (err) {
     console.error('Failed to load sites for VLAN:', err);
   }
 }
+
+// Listen for user input, filter & show matching sites only if input length > 0
+vlanSiteSearch.addEventListener('input', () => {
+  const val = vlanSiteSearch.value.trim().toLowerCase();
+
+  if (val.length < 1) {
+    vlanSiteList.innerHTML = ''; // Clear list if input empty
+    return;
+  }
+
+  const filtered = vlanSites.filter(s => s.desc.toLowerCase().includes(val));
+  renderVlanSiteList(filtered);
+});
 
 function renderVlanSiteList(sites) {
   vlanSiteList.innerHTML = '';
@@ -147,6 +161,7 @@ function renderVlanSiteList(sites) {
     vlanSiteList.appendChild(li);
   });
 }
+
 
 vlanSiteSearch.addEventListener('input', () => {
   const val = vlanSiteSearch.value.trim().toLowerCase();
