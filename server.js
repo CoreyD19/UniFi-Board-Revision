@@ -252,7 +252,7 @@ const wlanPayload = {
   wpa: 2,
   wpa_mode: 'wpa2',
   wpa_psk: pass,
-  ap_group_ids: ''
+  ap_group_ids: '',
   ap_group_mode: 'all'
 };
 
