@@ -273,7 +273,7 @@ const wlanPayload = {
   wpa: 2,
   wpa_mode: 'wpa2',
   wpa_psk: pass,
-  apgroup_id: apGroupId
+  apgroup_id: 'All'
 };
 
 // Attach the WLAN to the VLAN/network. Try common field names if available
