@@ -113,6 +113,6 @@ pre {
 }
 
 #vlan-site-list li.selected {
-  background-color: #337ab7; /* nice blue highlight */
+  background-color: #d44614;
   color: white;
 }
