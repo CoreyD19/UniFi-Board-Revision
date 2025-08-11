@@ -237,10 +237,10 @@ if (!netRes.ok) {
 }
 
 const netJson = await netRes.json();
-const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson;
+const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
 const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
 
-// --- Get existing WLAN configs ---
+// --- Get existing WLAN configs to obtain apgroup_id ---
 const wlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
   method: 'GET',
   headers: { 'Content-Type': 'application/json' },
@@ -255,39 +255,26 @@ if (!wlanRes.ok) {
 const wlanJson = await wlanRes.json();
 const wlanConfs = wlanJson.data || [];
 
-// --- Get AP Groups explicitly ---
-const apGroupRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/apgroup`, {
-  method: 'GET',
-  headers: { 'Content-Type': 'application/json' },
-  agent
+// Debug: log all WLANs and their apgroup_id values
+console.log('Existing WLAN Configurations:');
+wlanConfs.forEach((wlan, i) => {
+  console.log(`WLAN #${i + 1}: name='${wlan.name}', apgroup_id='${wlan.apgroup_id || wlan.ap_group_id || "N/A"}'`);
 });
 
-if (!apGroupRes.ok) {
-  const txt = await apGroupRes.text().catch(() => '');
-  throw new Error(`Failed to get AP groups: ${apGroupRes.status} ${apGroupRes.statusText} ${txt}`);
+if (wlanConfs.length === 0) {
+  throw new Error('No existing WLAN configurations found to get apgroup_id from.');
 }
 
-const apGroupJson = await apGroupRes.json();
-const apGroups = apGroupJson.data || [];
-
-// Pick AP Group ID to use:
-// Try to get from existing WLAN first, else pick first AP group
-let apGroupId = null;
-
-const wlanWithApGroup = wlanConfs.find(w => w.apgroup_id || w.ap_group_id);
-if (wlanWithApGroup) {
-  apGroupId = wlanWithApGroup.apgroup_id || wlanWithApGroup.ap_group_id;
-}
-
-if (!apGroupId && apGroups.length > 0) {
-  apGroupId = apGroups[0]._id || apGroups[0].id || apGroups[0].apgroup_id;
-}
+// Find a WLAN that has apgroup_id or fallback to first WLAN
+const apGroupWlan = wlanConfs.find(w => w.apgroup_id || w.ap_group_id) || wlanConfs[0];
+const apGroupId = apGroupWlan.apgroup_id || apGroupWlan.ap_group_id;
 
 if (!apGroupId) {
-  throw new Error('No AP group ID found from WLANs or AP groups.');
+  throw new Error('No apgroup_id found on existing WLANs.');
 }
 
 // --- Create WLAN in UniFi ---
+// The WLAN needs a reference to the networkconf; different controllers expect networkconf_id or mapping via 'vlan'
 const wlanPayload = {
   name: ssid,
   ssid: ssid,
@@ -299,6 +286,7 @@ const wlanPayload = {
   apgroup_id: apGroupId
 };
 
+// Attach the WLAN to the VLAN/network. Try common field names if available
 if (networkId) {
   wlanPayload.networkconf_id = networkId;
 } else {
