@@ -223,7 +223,7 @@ app.post('/create-vlan', async (req, res) => {
       vlan_enabled: true,
       vlan: parseInt(vlanId, 10),
       // many UniFi controllers accept igmp settings — we'll include commonly used field
-      igmp_snooping_enabled: true
+      igmp_snooping: true
     };
 
     const netRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/networkconf`, {
