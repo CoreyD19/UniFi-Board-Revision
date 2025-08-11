@@ -275,7 +275,7 @@ const wlanPayload = {
   security: 'wpapsk',
   wpa: 2,
   wpa_mode: 'wpa2',
-  wpa_psk: pass,
+  x_passphrase: pass,
   ap_group_ids: apGroupIds,
   ap_group_mode: 'all'
 };
@@ -299,16 +299,14 @@ if (!wlanCreateRes.ok) {
   throw new Error(`Failed to create wlan: ${wlanCreateRes.status} ${wlanCreateRes.statusText} ${txt}`);
 }
 
+// Build Mikrotik script
+const octs = parsedBase.split('.').map(o => parseInt(o, 10));
+const gateway = `${octs[0]}.${octs[1]}.${octs[2]}.1`;
+const poolStart = `${octs[0]}.${octs[1]}.${octs[2]}.100`;
+const poolEnd = `${octs[0]}.${octs[1]}.${octs[2]}.250`;
+const networkCidr = `${octs[0]}.${octs[1]}.${octs[2]}.0/24`;
 
-    // --- Build Mikrotik script output ---
-    // networkBase is like 192.168.50.0
-    const octs = parsedBase.split('.').map(o => parseInt(o, 10));
-    const gateway = `${octs[0]}.${octs[1]}.${octs[2]}.1`;
-    const poolStart = `${octs[0]}.${octs[1]}.${octs[2]}.100`;
-    const poolEnd = `${octs[0]}.${octs[1]}.${octs[2]}.250`;
-    const networkCidr = `${octs[0]}.${octs[1]}.${octs[2]}.0/24`;
-
-    const mikrotikScript = `# Paste into gateway (automatically generated)
+const mikrotikScript = `# Paste into gateway (automatically generated)
 /interface vlan
 add interface=GuestNet-Bridge name=${networkName} vlan-id=${vlanId}
 
@@ -331,7 +329,7 @@ add action=masquerade chain=srcnat comment=PrivateVLAN src-address=${networkCidr
 add action=drop chain=forward dst-address=10.11.0.0/21 src-address=${networkCidr}
 `;
 
-    res.json({ script: mikrotikScript });
+res.json({ script: mikrotikScript });
   } catch (err) {
     console.error('[Create VLAN Error]', err.message);
     res.status(500).json({ error: `❌ Failed to create VLAN: ${err.message}` });
