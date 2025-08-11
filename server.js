@@ -141,8 +141,6 @@ app.post('/mac-lookup', async (req, res) => {
       // Not found
       res.write('NOT_FOUND\n');
     }
-
-    res.write('DONE\n');
     res.end();
     await db.close();
   } catch (err) {
