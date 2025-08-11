@@ -215,7 +215,6 @@ app.post('/create-vlan', async (req, res) => {
     const sites = await getSites();
     const site = sites.find(s => s.name === siteName || s.desc === siteName || s.desc?.toLowerCase() === siteName?.toLowerCase());
     if (!site) return res.status(400).json({ error: '❌ Site not found.' });
-
 // --- Create Network in UniFi ---
 const networkPayload = {
   name: networkName,
@@ -238,10 +237,10 @@ if (!netRes.ok) {
 }
 
 const netJson = await netRes.json();
-const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
+const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson;
 const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
 
-// --- Get existing WLAN configs to obtain apgroup_id ---
+// --- Get existing WLAN configs ---
 const wlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
   method: 'GET',
   headers: { 'Content-Type': 'application/json' },
@@ -256,21 +255,39 @@ if (!wlanRes.ok) {
 const wlanJson = await wlanRes.json();
 const wlanConfs = wlanJson.data || [];
 
-console.log('Existing WLAN configs:', JSON.stringify(wlanConfs, null, 2));
+// --- Get AP Groups explicitly ---
+const apGroupRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/apgroup`, {
+  method: 'GET',
+  headers: { 'Content-Type': 'application/json' },
+  agent
+});
 
-if (wlanConfs.length === 0) {
-  throw new Error('No existing WLAN configurations found to get apgroup_id from.');
+if (!apGroupRes.ok) {
+  const txt = await apGroupRes.text().catch(() => '');
+  throw new Error(`Failed to get AP groups: ${apGroupRes.status} ${apGroupRes.statusText} ${txt}`);
 }
 
-const apGroupWlan = wlanConfs.find(w => w.apgroup_id || w.ap_group_id) || wlanConfs[0];
-const apGroupId = apGroupWlan?.apgroup_id || apGroupWlan?.ap_group_id || '';
+const apGroupJson = await apGroupRes.json();
+const apGroups = apGroupJson.data || [];
+
+// Pick AP Group ID to use:
+// Try to get from existing WLAN first, else pick first AP group
+let apGroupId = null;
+
+const wlanWithApGroup = wlanConfs.find(w => w.apgroup_id || w.ap_group_id);
+if (wlanWithApGroup) {
+  apGroupId = wlanWithApGroup.apgroup_id || wlanWithApGroup.ap_group_id;
+}
+
+if (!apGroupId && apGroups.length > 0) {
+  apGroupId = apGroups[0]._id || apGroups[0].id || apGroups[0].apgroup_id;
+}
 
 if (!apGroupId) {
-  console.warn('No apgroup_id found on existing WLANs, proceeding without it.');
+  throw new Error('No AP group ID found from WLANs or AP groups.');
 }
 
 // --- Create WLAN in UniFi ---
-// The WLAN needs a reference to the networkconf; different controllers expect networkconf_id or mapping via 'vlan'
 const wlanPayload = {
   name: ssid,
   ssid: ssid,
@@ -278,14 +295,10 @@ const wlanPayload = {
   security: 'wpapsk',
   wpa: 2,
   wpa_mode: 'wpa2',
-  wpa_psk: pass
+  wpa_psk: pass,
+  apgroup_id: apGroupId
 };
 
-if (apGroupId) {
-  wlanPayload.apgroup_id = apGroupId;
-}
-
-// Attach the WLAN to the VLAN/network. Try common field names if available
 if (networkId) {
   wlanPayload.networkconf_id = networkId;
 } else {
