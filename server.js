@@ -216,7 +216,7 @@ app.post('/create-vlan', async (req, res) => {
     const site = sites.find(s => s.name === siteName || s.desc === siteName || s.desc?.toLowerCase() === siteName?.toLowerCase());
     if (!site) return res.status(400).json({ error: '❌ Site not found.' });
 
-  // --- Create Network in UniFi ---
+// --- Create Network in UniFi ---
 const networkPayload = {
   name: networkName,
   purpose: 'corporate',
@@ -241,7 +241,31 @@ const netJson = await netRes.json();
 const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
 const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
 
+// --- Get existing WLAN configs to obtain apgroup_id ---
+const wlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
+  method: 'GET',
+  headers: { 'Content-Type': 'application/json' },
+  agent
+});
 
+if (!wlanRes.ok) {
+  const txt = await wlanRes.text().catch(() => '');
+  throw new Error(`Failed to get WLAN configs: ${wlanRes.status} ${wlanRes.statusText} ${txt}`);
+}
+
+const wlanJson = await wlanRes.json();
+const wlanConfs = wlanJson.data || [];
+
+if (wlanConfs.length === 0) {
+  throw new Error('No existing WLAN configurations found to get apgroup_id from.');
+}
+
+const apGroupWlan = wlanConfs.find(w => w.apgroup_id) || wlanConfs[0];
+const apGroupId = apGroupWlan.apgroup_id;
+
+if (!apGroupId) {
+  throw new Error('No apgroup_id found on existing WLANs.');
+}
 
 // --- Create WLAN in UniFi ---
 // The WLAN needs a reference to the networkconf; different controllers expect networkconf_id or mapping via 'vlan'
@@ -249,12 +273,13 @@ const wlanPayload = {
   name: ssid,
   ssid: ssid,
   enabled: true,
-  security: 'wpapsk',   // Corrected value
+  security: 'wpapsk',
   wpa: 2,
   wpa_mode: 'wpa2',
   wpa_psk: pass,
-  apgroup_id: 'All'
+  apgroup_id: apGroupId
 };
+
 
 // Attach the WLAN to the VLAN/network. Try common field names if available
 if (networkId) {
