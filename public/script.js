@@ -1,15 +1,21 @@
 document.getElementById('tab-board').addEventListener('click', () => {
   document.getElementById('board-section').style.display = 'block';
   document.getElementById('mac-section').style.display = 'none';
+  document.getElementById('vlan-section').style.display = 'none';
+
   document.getElementById('tab-board').classList.add('active');
   document.getElementById('tab-mac').classList.remove('active');
+  document.getElementById('tab-vlan').classList.remove('active');
 });
 
 document.getElementById('tab-mac').addEventListener('click', () => {
   document.getElementById('board-section').style.display = 'none';
   document.getElementById('mac-section').style.display = 'block';
+  document.getElementById('vlan-section').style.display = 'none';
+
   document.getElementById('tab-board').classList.remove('active');
   document.getElementById('tab-mac').classList.add('active');
+  document.getElementById('tab-vlan').classList.remove('active');
 });
 
 document.getElementById('tab-vlan').addEventListener('click', () => {
@@ -21,6 +27,7 @@ document.getElementById('tab-vlan').addEventListener('click', () => {
   document.getElementById('tab-mac').classList.remove('active');
   document.getElementById('tab-vlan').classList.add('active');
 });
+
 
 
 document.getElementById('lookup-board').addEventListener('click', lookupBoard);
