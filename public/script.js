@@ -170,12 +170,6 @@ function renderVlanSiteList(sites) {
 }
 
 
-vlanSiteSearch.addEventListener('input', () => {
-  const val = vlanSiteSearch.value.trim().toLowerCase();
-  const filtered = vlanSites.filter(s => s.desc.toLowerCase().includes(val));
-  renderVlanSiteList(filtered);
-});
-
 // VLAN form submission
 document.getElementById('create-vlan').addEventListener('click', async () => {
   const vlanId = document.getElementById('vlan-id').value.trim();
@@ -197,7 +191,7 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
   }
   const siteName = selectedLi.dataset.name;
 
-  // Basic client validation (server also validates)
+  // Basic client validation
   const errors = [];
   if (!vlanId || isNaN(vlanId)) errors.push('VLAN ID must be a number.');
   else if (+vlanId < 1 || +vlanId > 4094) errors.push('VLAN ID must be between 1 and 4094.');
@@ -219,12 +213,35 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ siteName, vlanId: +vlanId, networkName, networkBase: networkIp, ssid, pass })
     });
+
     const data = await res.json();
+
     if (!res.ok) {
-      errorBox.textContent = data.error || '❌ Failed to create VLAN.';
+      // Handle specific VLAN used error cleanly
+      if (data.error) {
+        try {
+          // Extract JSON object from error string
+          const errorMatch = data.error.match(/\{.*\}/s);
+          if (errorMatch) {
+            const errorObj = JSON.parse(errorMatch[0]);
+            if (errorObj.meta?.msg === 'api.err.VlanUsed') {
+              errorBox.textContent = `❌ VLAN ID ${errorObj.meta.vlan} is already in use. Please choose a different VLAN ID.`;
+            } else {
+              errorBox.textContent = `❌ ${errorObj.meta?.msg || data.error}`;
+            }
+          } else {
+            errorBox.textContent = `❌ ${data.error}`;
+          }
+        } catch {
+          errorBox.textContent = `❌ ${data.error}`;
+        }
+      } else {
+        errorBox.textContent = '❌ Failed to create VLAN.';
+      }
       scriptBox.value = '';
       return;
     }
+
     errorBox.textContent = '✅ VLAN created successfully.';
     scriptBox.value = data.script || '';
   } catch (err) {
