@@ -288,16 +288,16 @@ if (networkId) {
   wlanPayload.vlan = parseInt(vlanId, 10);
 }
 
-const wlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
+const existingWlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(wlanPayload),
   agent
 });
 
-if (!wlanRes.ok) {
-  const txt = await wlanRes.text().catch(() => '');
-  throw new Error(`Failed to create wlan: ${wlanRes.status} ${wlanRes.statusText} ${txt}`);
+if (!existingWlanRes.ok) {
+  const txt = awaitexistingWlanRes.text().catch(() => '');
+  throw new Error(`Failed to create wlan: ${existingWlanRes.status} ${existingWlanRes.statusText} ${txt}`);
 }
 
     // --- Build Mikrotik script output ---
