@@ -226,7 +226,7 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
       return;
     }
     errorBox.textContent = '✅ VLAN created successfully.';
-    scriptBox.value = data.gatewayScript || '';
+    scriptBox.value = data.script || '';
   } catch (err) {
     errorBox.textContent = '❌ Error creating VLAN.';
     scriptBox.value = '';
