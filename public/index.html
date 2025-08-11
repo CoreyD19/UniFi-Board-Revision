@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>UniFi Tool - Nexus Wifi</title>
+  <title>Tools - Nexus Wifi</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="favicon.ico" />
 </head>
@@ -15,6 +15,7 @@
   <nav>
     <button id="tab-board" class="active">Board Revision</button>
     <button id="tab-mac">MAC Lookup</button>
+    <button id="tab-vlan">VLAN</button>
   </nav>
 
   <main>
@@ -32,11 +33,7 @@
       <h2>MAC Address Lookup</h2>
       <input type="text" id="mac-input" placeholder="Enter MAC (e.g. 04:18:D6:07:DA:0A)" />
       <button id="lookup-mac">Lookup</button>
-<!--  
-      <div id="progress-wrapper">
-        <div id="progress-bar"></div>
-      </div>
--->
+
       <div id="mac-progress-info">
         <span id="site-counter"></span>
         <span id="timer-up"></span>
@@ -45,6 +42,25 @@
 
       <p id="mac-status" class="error-text"></p>
       <pre id="mac-results"></pre>
+    </section>
+
+    <!-- VLAN SECTION -->
+    <section id="vlan-section" style="display:none;">
+      <h2>VLAN Creation</h2>
+      <input type="text" id="vlan-id" placeholder="VLAN ID (e.g. 100)" />
+      <input type="text" id="vlan-network-name" placeholder="Network Name" />
+      <input type="text" id="vlan-network-ip" placeholder="Network IP (e.g. 192.168.50.0)" />
+      <input type="text" id="vlan-ssid" placeholder="WiFi SSID" />
+      <input type="text" id="vlan-password" placeholder="WiFi Password (8–63 chars)" />
+
+      <h3>Select Site</h3>
+      <input type="text" id="vlan-site-search" placeholder="Search sites..." />
+      <ul id="vlan-site-list"></ul>
+
+      <button id="create-vlan">Create VLAN</button>
+      <p id="vlan-error" class="error-text"></p>
+      <h3>Generated Gateway Script</h3>
+      <textarea id="vlan-gateway-script" readonly rows="10"></textarea>
     </section>
   </main>
 
