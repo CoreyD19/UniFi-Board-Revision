@@ -216,34 +216,55 @@ app.post('/create-vlan', async (req, res) => {
     const site = sites.find(s => s.name === siteName || s.desc === siteName || s.desc?.toLowerCase() === siteName?.toLowerCase());
     if (!site) return res.status(400).json({ error: '❌ Site not found.' });
 
-    // --- Create Network in UniFi ---
-    const networkPayload = {
-      name: networkName,
-      purpose: 'corporate',
-      vlan_enabled: true,
-      vlan: parseInt(vlanId, 10),
-      // many UniFi controllers accept igmp settings — we'll include commonly used field
-      igmp_snooping: true
-    };
+  // --- Create Network in UniFi ---
+const networkPayload = {
+  name: networkName,
+  purpose: 'corporate',
+  vlan_enabled: true,
+  vlan: parseInt(vlanId, 10),
+  igmp_snooping: true
+};
 
-    const netRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/networkconf`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(networkPayload),
-      agent
-    });
+const netRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/networkconf`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(networkPayload),
+  agent
+});
 
-    if (!netRes.ok) {
-      const txt = await netRes.text().catch(() => '');
-      throw new Error(`Failed to create network: ${netRes.status} ${netRes.statusText} ${txt}`);
-    }
+if (!netRes.ok) {
+  const txt = await netRes.text().catch(() => '');
+  throw new Error(`Failed to create network: ${netRes.status} ${netRes.statusText} ${txt}`);
+}
 
-    const netJson = await netRes.json();
-    const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
-    const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
+const netJson = await netRes.json();
+const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
+const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
 
-    // --- Create WLAN in UniFi ---
-    // The WLAN needs a reference to the networkconf; different controllers expect networkconf_id or mapping via 'vlan'
+// --- Fetch AP groups to get valid apgroup_id ---
+const apGroupsRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/apgroup`, {
+  method: 'GET',
+  headers: { 'Content-Type': 'application/json' },
+  agent
+});
+
+if (!apGroupsRes.ok) {
+  const txt = await apGroupsRes.text().catch(() => '');
+  throw new Error(`Failed to get AP groups: ${apGroupsRes.status} ${apGroupsRes.statusText} ${txt}`);
+}
+
+const apGroupsJson = await apGroupsRes.json();
+const apGroups = Array.isArray(apGroupsJson) ? apGroupsJson : apGroupsJson.data;
+const defaultApGroup = apGroups.find(g => g.name === 'Default' || g.name === 'All' || g.default === true);
+
+if (!defaultApGroup) {
+  throw new Error('Default AP group not found.');
+}
+
+const apGroupId = defaultApGroup._id;
+
+// --- Create WLAN in UniFi ---
+// The WLAN needs a reference to the networkconf; different controllers expect networkconf_id or mapping via 'vlan'
 const wlanPayload = {
   name: ssid,
   ssid: ssid,
@@ -252,29 +273,27 @@ const wlanPayload = {
   wpa: 2,
   wpa_mode: 'wpa2',
   wpa_psk: pass,
-  apgroup_id: 'Default'
+  apgroup_id: apGroupId
 };
 
-    // Attach the WLAN to the VLAN/network. Try common field names if available
-    if (networkId) {
-      // try to link by networkconf_id
-      wlanPayload.networkconf_id = networkId;
-    } else {
-      // fallback to setting vlan
-      wlanPayload.vlan = parseInt(vlanId, 10);
-    }
+// Attach the WLAN to the VLAN/network. Try common field names if available
+if (networkId) {
+  wlanPayload.networkconf_id = networkId;
+} else {
+  wlanPayload.vlan = parseInt(vlanId, 10);
+}
 
-    const wlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(wlanPayload),
-      agent
-    });
+const wlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(wlanPayload),
+  agent
+});
 
-    if (!wlanRes.ok) {
-      const txt = await wlanRes.text().catch(() => '');
-      throw new Error(`Failed to create wlan: ${wlanRes.status} ${wlanRes.statusText} ${txt}`);
-    }
+if (!wlanRes.ok) {
+  const txt = await wlanRes.text().catch(() => '');
+  throw new Error(`Failed to create wlan: ${wlanRes.status} ${wlanRes.statusText} ${txt}`);
+}
 
     // --- Build Mikrotik script output ---
     // networkBase is like 192.168.50.0
