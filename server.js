@@ -244,13 +244,13 @@ app.post('/create-vlan', async (req, res) => {
 
     // --- Create WLAN in UniFi ---
     // The WLAN needs a reference to the networkconf; different controllers expect networkconf_id or mapping via 'vlan'
-   const wlanPayload = {
+const wlanPayload = {
   name: ssid,
   ssid: ssid,
   enabled: true,
-  security: 'wpapsk',   // <-- corrected value
+  security: 'wpapsk',   // Corrected value
   wpa: 2,
-  wpa_mode: 'wpa2_only',
+  wpa_mode: 'wpa2',
   wpa_psk: pass
 };
 
