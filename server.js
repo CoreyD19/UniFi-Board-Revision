@@ -19,8 +19,7 @@ const __dirname = path.dirname(__filename);
 // ✅ IP Filtering - BEFORE routes
 const allowedRanges = [
   { cidr: '216.196.237.57/29' },
-  { ip: '71.66.161.195' },
-  { ip: '66.228.53.233' }
+  { ip: '71.66.161.195' }
 ];
 
 function isAllowedIp(ip) {
@@ -253,7 +252,7 @@ const existingWlans = existingWlansJson.data || [];
 
 // 4. Check if SSID already exists (case-insensitive, trimmed)
 if (existingWlans.some(wlan => wlan.name && wlan.name.trim().toLowerCase() === ssid.trim().toLowerCase())) {
-  throw new Error(`WiFi SSID '${ssid}' already exists. Please choose a different SSID.`);
+  return res.status(400).json({ error:`WiFi SSID '${ssid}' already exists.`});
 }
 
 // --- Create Network in UniFi ---
