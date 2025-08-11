@@ -215,6 +215,46 @@ app.post('/create-vlan', async (req, res) => {
     const sites = await getSites();
     const site = sites.find(s => s.name === siteName || s.desc === siteName || s.desc?.toLowerCase() === siteName?.toLowerCase());
     if (!site) return res.status(400).json({ error: '❌ Site not found.' });
+	
+	// 1. Fetch existing networks
+const existingNetworksRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/networkconf`, {
+  method: 'GET',
+  headers: { 'Content-Type': 'application/json' },
+  agent
+});
+
+if (!existingNetworksRes.ok) {
+  const txt = await existingNetworksRes.text().catch(() => '');
+  throw new Error(`Failed to get existing networks: ${existingNetworksRes.status} ${existingNetworksRes.statusText} ${txt}`);
+}
+
+const existingNetworksJson = await existingNetworksRes.json();
+const existingNetworks = existingNetworksJson.data || [];
+
+// 2. Check if network name already exists
+if (existingNetworks.some(net => net.name.toLowerCase() === networkName.toLowerCase())) {
+  throw new Error(`Network name '${networkName}' already exists. Please choose a different network name.`);
+}
+
+// 3. Fetch existing WLANs
+const existingWlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
+  method: 'GET',
+  headers: { 'Content-Type': 'application/json' },
+  agent
+});
+
+if (!existingWlanRes.ok) {
+  const txt = await existingWlanRes.text().catch(() => '');
+  throw new Error(`Failed to get existing WLANs: ${existingWlanRes.status} ${existingWlanRes.statusText} ${txt}`);
+}
+
+const existingWlansJson = await existingWlanRes.json();
+const existingWlans = existingWlansJson.data || [];
+
+// 4. Check if SSID already exists
+if (existingWlans.some(wlan => wlan.ssid && wlan.ssid.toLowerCase() === ssid.toLowerCase())) {
+  throw new Error(`WiFi SSID '${ssid}' already exists. Please choose a different SSID.`);
+}
 
 // --- Create Network in UniFi ---
 const networkPayload = {
