@@ -242,7 +242,7 @@ const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // control
 const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
 
 // --- Fetch AP groups to get valid apgroup_id ---
-const apGroupsRes = await fetchWithCookies(`${baseUrl}/api/rest/apgroup`, {
+const apGroupsRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/apgroups`, {
   method: 'GET',
   headers: { 'Content-Type': 'application/json' },
   agent
