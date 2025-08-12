@@ -150,8 +150,32 @@ app.post('/mac-lookup', async (req, res) => {
     }
   }
 });
+// Helper function to parse /24 CIDR base IP
+function parseCidr(networkStr) {
+  if (!networkStr) return null;
+  let n = networkStr.trim();
+  if (n.includes('/')) n = n.split('/')[0];
+  if (!net.isIP(n)) return null;
+  const octets = n.split('.').map(o => parseInt(o, 10));
+  if (octets[3] !== 0) return null; // Require base .0 for /24
+  return `${octets[0]}.${octets[1]}.${octets[2]}.0`;
+}
 
-// ---------------- New: /create-vlan endpoint ----------------
+// ---------------- GET /sites endpoint ----------------
+app.get('/sites', async (req, res) => {
+  try {
+    await login();
+    const sites = await getSites();
+    // Return only name and desc for frontend use
+    const out = sites.map(s => ({ name: s.name, desc: s.desc || s.name }));
+    res.json({ sites: out });
+  } catch (err) {
+    console.error('[Sites Error]', err.message);
+    res.status(500).json({ error: '❌ Failed to fetch sites' });
+  }
+});
+
+// ---------------- POST /create-vlan endpoint ----------------
 app.post('/create-vlan', async (req, res) => {
   /*
     Expected body:
@@ -179,30 +203,7 @@ app.post('/create-vlan', async (req, res) => {
     gatewayNetworkIp,
     comment
   } = req.body || {};
-  
-  app.get('/sites', async (req, res) => {
-  try {
-    await login();
-    const sites = await getSites();
-    // Return only name and desc for frontend use
-    const out = sites.map(s => ({ name: s.name, desc: s.desc || s.name }));
-    res.json({ sites: out });
-  } catch (err) {
-    console.error('[Sites Error]', err.message);
-    res.status(500).json({ error: '❌ Failed to fetch sites' });
-  }
-});
 
-
-function parseCidr(networkStr) {
-  if (!networkStr) return null;
-  let n = networkStr.trim();
-  if (n.includes('/')) n = n.split('/')[0];
-  if (!net.isIP(n)) return null;
-  const octets = n.split('.').map(o => parseInt(o, 10));
-  if (octets[3] !== 0) return null; // Require base .0 for /24
-  return `${octets[0]}.${octets[1]}.${octets[2]}.0`;
-}
   // --- Validation ---
   const errors = [];
   if (!siteName) errors.push('Site is required.');
@@ -213,7 +214,6 @@ function parseCidr(networkStr) {
   if (!ssid || ssid.length < 1 || ssid.length > 32) errors.push('SSID required (1-32 characters).');
   if (!pass || pass.length < 8 || pass.length > 63) errors.push('Password required (8-63 characters).');
 
-  // New Gateway VLAN validation
   if (!interfaceName || interfaceName.includes(' ')) errors.push('Interface Name is required and must not contain spaces.');
   if (!gatewayNetworkIp) errors.push('Network IP is required for Gateway VLAN.');
 
@@ -365,7 +365,6 @@ function parseCidr(networkStr) {
       ap_group_mode: 'all',
     };
 
-    // Attach the WLAN to the VLAN/network. Try common field names if available
     if (networkId) {
       wlanPayload.networkconf_id = networkId;
     } else {
@@ -396,7 +395,6 @@ function parseCidr(networkStr) {
 
     // Prepare comment line (sanitize newlines)
     const commentLine = comment ? ` comment=${comment.replace(/\n/g, ' ').trim()}` : '';
-
     const mikrotikScript = `
 /interface vlan
 add interface=${interfaceName} name=${networkName} vlan-id=${vlanId}
