@@ -145,16 +145,20 @@ vlanSiteSearch.addEventListener('input', () => {
     vlanSiteList.innerHTML = '';
     return;
   }
-  const filtered = vlanSites.filter(s => s.desc.toLowerCase().includes(val));
+  const filtered = vlanSites.filter(s => {
+    const desc = s.desc || s.name || '';
+    return desc.toLowerCase().includes(val);
+  });
   renderVlanSiteList(filtered);
 });
 
 function renderVlanSiteList(sites) {
   vlanSiteList.innerHTML = '';
   sites.forEach(site => {
+    const text = site.desc || site.name || 'Unnamed Site';
     const li = document.createElement('li');
-    li.textContent = site.desc;
-    li.dataset.name = site.name;
+    li.textContent = text;
+    li.dataset.name = site.name || '';
     li.style.cursor = 'pointer';
     li.addEventListener('click', () => {
       Array.from(vlanSiteList.children).forEach(c => c.classList.remove('selected'));
@@ -163,6 +167,8 @@ function renderVlanSiteList(sites) {
     vlanSiteList.appendChild(li);
   });
 }
+
+
 
 // Link VLAN ID fields between UniFi and Gateway VLAN (two-way)
 const vlanIdField = document.getElementById('vlan-id');
