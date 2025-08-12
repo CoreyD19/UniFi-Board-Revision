@@ -284,7 +284,11 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
 
     // New part: fetch gateway IP for selected site and show it
     try {
-      const ipRes = await fetch(`/find-gateway-ip?siteName=${encodeURIComponent(siteName)}`);
+      const ipRes = await fetch('/find-gateway-ip', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ siteName })
+});
       const ipData = await ipRes.json();
       if (ipData.ip) {
         gatewayIpLine.textContent = `Gateway IP found for ${siteName}: ${ipData.ip}`;
