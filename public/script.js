@@ -129,20 +129,28 @@ const vlanSiteSearch = document.getElementById('vlan-site-search');
 async function loadVlanSites() {
   try {
     const res = await fetch('/sites');
+    if (!res.ok) throw new Error(`Failed to fetch sites: ${res.statusText}`);
     const data = await res.json();
-    if (data.sites) {
+    if (data.sites && Array.isArray(data.sites)) {
       vlanSites = data.sites;
+      vlanSiteList.innerHTML = ''; // keep list empty initially
+      console.log(`Loaded ${vlanSites.length} VLAN sites`);
+    } else {
+      vlanSites = [];
       vlanSiteList.innerHTML = '';
+      console.warn('No sites array found in /sites response');
     }
   } catch (err) {
     console.error('Failed to load sites for VLAN:', err);
+    vlanSites = [];
+    vlanSiteList.innerHTML = '';
   }
 }
 
 vlanSiteSearch.addEventListener('input', () => {
   const val = vlanSiteSearch.value.trim().toLowerCase();
   if (val.length < 1) {
-    vlanSiteList.innerHTML = '';
+    vlanSiteList.innerHTML = ''; // clear list if empty input
     return;
   }
   const filtered = vlanSites.filter(s => {
@@ -167,8 +175,6 @@ function renderVlanSiteList(sites) {
     vlanSiteList.appendChild(li);
   });
 }
-
-
 
 // Link VLAN ID fields between UniFi and Gateway VLAN (two-way)
 const vlanIdField = document.getElementById('vlan-id');
@@ -277,5 +283,7 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
     errorBox.textContent = '❌ Error creating VLAN.';
   }
 });
+
 loadVlanSites();
+
 
