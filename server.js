@@ -432,11 +432,19 @@ app.post('/find-gateway-ip', async (req, res) => {
   const { siteName } = req.body || {};
   if (!siteName) return res.status(400).json({ error: 'Site name is required.' });
 
-  // Names to search in order of priority
-  const searchNames = ['ap1', 'sw1', 'switch1', 'sw2', 'switch2'];
+  // Ordered search list for device names/hostnames
+  const searchNames = [
+    'ap1', 'ap01',
+    'sw1', 'sw01',
+    'switch1', 'switch01',
+    'sw2', 'sw02',
+    'switch2', 'switch02'
+  ];
 
   try {
     await login();
+
+    // Get all devices in the site
     const devicesRes = await fetchWithCookies(
       `${baseUrl}/api/s/${encodeURIComponent(siteName)}/stat/device`,
       { method: 'GET', headers: { 'Content-Type': 'application/json' }, agent }
@@ -449,71 +457,77 @@ app.post('/find-gateway-ip', async (req, res) => {
 
     const devicesJson = await devicesRes.json();
     const devices = devicesJson.data || [];
+    if (!devices.length) return res.status(404).json({ error: 'No devices found in site.' });
 
-    // Helper to find device by partial name match in order
-    let targetDevice = null;
+    // Try each search term in order until success
     for (const searchTerm of searchNames) {
-      targetDevice = devices.find(dev =>
+      const targetDevice = devices.find(dev =>
         (dev.name && dev.name.toLowerCase().includes(searchTerm)) ||
         (dev.hostname && dev.hostname.toLowerCase().includes(searchTerm))
       );
-      if (targetDevice) break;
-    }
 
-    if (!targetDevice) return res.status(404).json({ error: 'No matching device found.' });
+      if (!targetDevice) continue;
 
-    const mac = targetDevice.mac;
+      const mac = targetDevice.mac;
+      console.log(`[Find Gateway IP] Trying device: ${targetDevice.name || targetDevice.hostname} (${mac})`);
 
-    // Run debug command to get gateway IP
-    const debugCmd = {
-      cmd: 'debug',
-      mac,
-      data: 'curl ifconfig.co'
-    };
+      // Command for UniFi debug tools
+      const debugCmd = {
+        cmd: 'debug',
+        mac,
+        data: 'curl ifconfig.co'
+      };
 
-    const debugRes = await fetchWithCookies(
-      `${baseUrl}/api/s/${encodeURIComponent(siteName)}/cmd/devmgr`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(debugCmd),
-        agent,
+      const debugRes = await fetchWithCookies(
+        `${baseUrl}/api/s/${encodeURIComponent(siteName)}/cmd/devmgr`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(debugCmd),
+          agent,
+        }
+      );
+
+      if (!debugRes.ok) {
+        console.warn(`[Find Gateway IP] Debug failed for ${searchTerm}, trying next...`);
+        continue;
       }
-    );
 
-    if (!debugRes.ok) {
-      const txt = await debugRes.text().catch(() => '');
-      throw new Error(`Failed to run debug command: ${debugRes.status} ${debugRes.statusText} ${txt}`);
+      const debugJson = await debugRes.json();
+
+      // Extract debug output
+      let output = '';
+      if (Array.isArray(debugJson.data)) {
+        output = debugJson.data[0]?.data || '';
+      } else if (typeof debugJson.data === 'string') {
+        output = debugJson.data;
+      } else if (debugJson.data && typeof debugJson.data.data === 'string') {
+        output = debugJson.data.data;
+      }
+
+      const ip = output.trim();
+      const ipRegex = /(\d{1,3}\.){3}\d{1,3}/;
+
+      if (ipRegex.test(ip)) {
+        return res.json({
+          ip,
+          mac,
+          deviceName: targetDevice.name || targetDevice.hostname
+        });
+      } else {
+        console.warn(`[Find Gateway IP] Invalid IP output from ${searchTerm}: "${output}"`);
+      }
     }
 
-    const debugJson = await debugRes.json();
-
-    // debugJson.data might be the raw output or nested, extract IP string
-    // Usually, output is in debugJson.data[0].data or debugJson.data.data as string
-    let output = '';
-    if (Array.isArray(debugJson.data)) {
-      output = debugJson.data[0]?.data || '';
-    } else if (typeof debugJson.data === 'string') {
-      output = debugJson.data;
-    } else if (debugJson.data && typeof debugJson.data.data === 'string') {
-      output = debugJson.data.data;
-    }
-
-    const ip = output.trim();
-
-    // Validate IP format (basic IPv4)
-    const ipRegex = /(\d{1,3}\.){3}\d{1,3}/;
-    if (!ipRegex.test(ip)) {
-      return res.status(500).json({ error: 'Invalid IP received from device debug output.', rawOutput: output });
-    }
-
-    res.json({ ip, mac, deviceName: targetDevice.name || targetDevice.hostname });
+    // If we got here, nothing worked
+    res.status(404).json({ error: 'No valid IP could be retrieved from any device.' });
 
   } catch (err) {
     console.error('[Find Gateway IP Error]', err);
     res.status(500).json({ error: 'Failed to find gateway IP.', details: err.message });
   }
 });
+
 
 
 
