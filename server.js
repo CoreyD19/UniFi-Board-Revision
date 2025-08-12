@@ -210,7 +210,7 @@ app.post('/create-vlan', async (req, res) => {
   if (!vlanId || isNaN(vlanId)) errors.push('VLAN ID is required and must be a number.');
   else if (vlanId < 1 || vlanId > 4094) errors.push('VLAN ID must be between 1 and 4094.');
   if (!networkName || typeof networkName !== 'string' || networkName.trim().length < 1) errors.push('Network name required.');
-  if (!networkBase) errors.push('Network base (eg. 192.168.50.0) is required.');
+  // if (!networkBase) errors.push('Network base (eg. 192.168.50.0) is required.');
   if (!ssid || ssid.length < 1 || ssid.length > 32) errors.push('SSID required (1-32 characters).');
   if (!pass || pass.length < 8 || pass.length > 63) errors.push('Password required (8-63 characters).');
 
