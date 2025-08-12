@@ -179,7 +179,30 @@ app.post('/create-vlan', async (req, res) => {
     gatewayNetworkIp,
     comment
   } = req.body || {};
+  
+  app.get('/sites', async (req, res) => {
+  try {
+    await login();
+    const sites = await getSites();
+    // Return only name and desc for frontend use
+    const out = sites.map(s => ({ name: s.name, desc: s.desc || s.name }));
+    res.json({ sites: out });
+  } catch (err) {
+    console.error('[Sites Error]', err.message);
+    res.status(500).json({ error: '❌ Failed to fetch sites' });
+  }
+});
 
+
+function parseCidr(networkStr) {
+  if (!networkStr) return null;
+  let n = networkStr.trim();
+  if (n.includes('/')) n = n.split('/')[0];
+  if (!net.isIP(n)) return null;
+  const octets = n.split('.').map(o => parseInt(o, 10));
+  if (octets[3] !== 0) return null; // Require base .0 for /24
+  return `${octets[0]}.${octets[1]}.${octets[2]}.0`;
+}
   // --- Validation ---
   const errors = [];
   if (!siteName) errors.push('Site is required.');
