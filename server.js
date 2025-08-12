@@ -151,32 +151,6 @@ app.post('/mac-lookup', async (req, res) => {
   }
 });
 
-// ---------------- New: /sites endpoint (returns list of sites) ----------------
-app.get('/sites', async (req, res) => {
-  try {
-    await login();
-    const sites = await getSites();
-    // Return only the fields the frontend needs
-    const out = sites.map(s => ({ name: s.name, desc: s.desc || s.name }));
-    res.json({ sites: out });
-  } catch (err) {
-    console.error('[Sites Error]', err.message);
-    res.status(500).json({ error: '❌ Failed to fetch sites' });
-  }
-});
-
-// ---------------- Helper: validate IPv4 network (accepts x.y.z.0 or x.y.z.0/24) ----------------
-function parseCidr(networkStr) {
-  // Accept '192.168.50.0' or '192.168.50.0/24'
-  if (!networkStr) return null;
-  let n = networkStr.trim();
-  if (n.includes('/')) n = n.split('/')[0];
-  if (!net.isIP(n)) return null;
-  const octets = n.split('.').map(o => parseInt(o, 10));
-  if (octets[3] !== 0) return null; // require .0 network base for /24
-  return `${octets[0]}.${octets[1]}.${octets[2]}.0`;
-}
-
 // ---------------- New: /create-vlan endpoint ----------------
 app.post('/create-vlan', async (req, res) => {
   /*
@@ -185,13 +159,26 @@ app.post('/create-vlan', async (req, res) => {
       siteName: '<unifi site name (site.name)>',
       vlanId: 100,
       networkName: 'VLANSTAFF',
-      networkBase: '192.168.50.0', // or '192.168.50.0/24'
+      networkBase: '192.168.50.0',        // For UniFi network creation
       ssid: 'Guest-Wifi',
-      pass: 'securepassword'
+      pass: 'securepassword',
+      interfaceName: 'Vlan100',            // Gateway VLAN interface name (no spaces)
+      gatewayNetworkIp: '192.168.50.0',   // Gateway VLAN network IP (base)
+      comment: 'My VLAN comment'           // Optional comment for Mikrotik script
     }
   */
 
-  const { siteName, vlanId, networkName, networkBase, ssid, pass } = req.body || {};
+  const {
+    siteName,
+    vlanId,
+    networkName,
+    networkBase,
+    ssid,
+    pass,
+    interfaceName,
+    gatewayNetworkIp,
+    comment
+  } = req.body || {};
 
   // --- Validation ---
   const errors = [];
@@ -203,8 +190,12 @@ app.post('/create-vlan', async (req, res) => {
   if (!ssid || ssid.length < 1 || ssid.length > 32) errors.push('SSID required (1-32 characters).');
   if (!pass || pass.length < 8 || pass.length > 63) errors.push('Password required (8-63 characters).');
 
-  const parsedBase = parseCidr(networkBase);
-  if (!parsedBase) errors.push('Network base must be a valid /24 network address (eg. 192.168.50.0 or 192.168.50.0/24).');
+  // New Gateway VLAN validation
+  if (!interfaceName || interfaceName.includes(' ')) errors.push('Interface Name is required and must not contain spaces.');
+  if (!gatewayNetworkIp) errors.push('Network IP is required for Gateway VLAN.');
+
+  const parsedBase = parseCidr(gatewayNetworkIp);
+  if (!parsedBase) errors.push('Network IP for Gateway VLAN must be a valid /24 network address (eg. 192.168.50.0 or 192.168.50.0/24).');
 
   if (errors.length) return res.status(400).json({ error: errors.join(' ') });
 
@@ -212,142 +203,180 @@ app.post('/create-vlan', async (req, res) => {
     // Confirm site exists
     await login();
     const sites = await getSites();
-    const site = sites.find(s => s.name === siteName || s.desc === siteName || s.desc?.toLowerCase() === siteName?.toLowerCase());
+    const site = sites.find(
+      s =>
+        s.name === siteName ||
+        s.desc === siteName ||
+        s.desc?.toLowerCase() === siteName?.toLowerCase()
+    );
     if (!site) return res.status(400).json({ error: '❌ Site not found.' });
-	
-	// 1. Fetch existing networks
-const existingNetworksRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/networkconf`, {
-  method: 'GET',
-  headers: { 'Content-Type': 'application/json' },
-  agent
-});
 
-if (!existingNetworksRes.ok) {
-  const txt = await existingNetworksRes.text().catch(() => '');
-  throw new Error(`Failed to get existing networks: ${existingNetworksRes.status} ${existingNetworksRes.statusText} ${txt}`);
-}
+    // 1. Fetch existing networks
+    const existingNetworksRes = await fetchWithCookies(
+      `${baseUrl}/api/s/${site.name}/rest/networkconf`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        agent,
+      }
+    );
 
-const existingNetworksJson = await existingNetworksRes.json();
-const existingNetworks = existingNetworksJson.data || [];
+    if (!existingNetworksRes.ok) {
+      const txt = await existingNetworksRes.text().catch(() => '');
+      throw new Error(
+        `Failed to get existing networks: ${existingNetworksRes.status} ${existingNetworksRes.statusText} ${txt}`
+      );
+    }
 
-// 2. Check if network name already exists (case-insensitive, trimmed)
-if (existingNetworks.some(net => net.name?.trim().toLowerCase() === networkName.trim().toLowerCase())) {
-  return res.status(400).json({ error: `Network name '${networkName.trim()}' already exists.` });
-}
+    const existingNetworksJson = await existingNetworksRes.json();
+    const existingNetworks = existingNetworksJson.data || [];
 
-// 3. Fetch existing WLANs
-const existingWlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
-  method: 'GET',
-  headers: { 'Content-Type': 'application/json' },
-  agent
-});
+    // 2. Check if network name already exists (case-insensitive, trimmed)
+    if (
+      existingNetworks.some(
+        net => net.name?.trim().toLowerCase() === networkName.trim().toLowerCase()
+      )
+    ) {
+      return res
+        .status(400)
+        .json({ error: `Network name '${networkName.trim()}' already exists.` });
+    }
 
-if (!existingWlanRes.ok) {
-  const txt = await existingWlanRes.text().catch(() => '');
-  throw new Error(`Failed to get existing WLANs: ${existingWlanRes.status} ${existingWlanRes.statusText} ${txt}`);
-}
+    // 3. Fetch existing WLANs
+    const existingWlanRes = await fetchWithCookies(
+      `${baseUrl}/api/s/${site.name}/rest/wlanconf`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        agent,
+      }
+    );
 
-const existingWlansJson = await existingWlanRes.json();
-const existingWlans = existingWlansJson.data || [];
+    if (!existingWlanRes.ok) {
+      const txt = await existingWlanRes.text().catch(() => '');
+      throw new Error(
+        `Failed to get existing WLANs: ${existingWlanRes.status} ${existingWlanRes.statusText} ${txt}`
+      );
+    }
 
-// 4. Check if SSID already exists (case-insensitive, trimmed)
-if (existingWlans.some(wlan => wlan.name && wlan.name.trim().toLowerCase() === ssid.trim().toLowerCase())) {
-  return res.status(400).json({ error:`WiFi SSID '${ssid}' already exists.`});
-}
+    const existingWlansJson = await existingWlanRes.json();
+    const existingWlans = existingWlansJson.data || [];
 
-// --- Create Network in UniFi ---
-const networkPayload = {
-  name: networkName,
-  purpose: 'corporate',
-  vlan_enabled: true,
-  vlan: parseInt(vlanId, 10),
-  igmp_snooping: true
-};
+    // 4. Check if SSID already exists (case-insensitive, trimmed)
+    if (
+      existingWlans.some(
+        wlan => wlan.name && wlan.name.trim().toLowerCase() === ssid.trim().toLowerCase()
+      )
+    ) {
+      return res.status(400).json({ error: `WiFi SSID '${ssid}' already exists.` });
+    }
 
-const netRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/networkconf`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(networkPayload),
-  agent
-});
+    // --- Create Network in UniFi ---
+    const networkPayload = {
+      name: networkName,
+      purpose: 'corporate',
+      vlan_enabled: true,
+      vlan: parseInt(vlanId, 10),
+      igmp_snooping: true,
+    };
 
-if (!netRes.ok) {
-  const txt = await netRes.text().catch(() => '');
-  throw new Error(`Failed to create network: ${netRes.status} ${netRes.statusText} ${txt}`);
-}
+    const netRes = await fetchWithCookies(
+      `${baseUrl}/api/s/${site.name}/rest/networkconf`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(networkPayload),
+        agent,
+      }
+    );
 
-const netJson = await netRes.json();
-const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
-const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
+    if (!netRes.ok) {
+      const txt = await netRes.text().catch(() => '');
+      throw new Error(`Failed to create network: ${netRes.status} ${netRes.statusText} ${txt}`);
+    }
 
-// --- Get existing WLAN configs to obtain ap_group_ids ---
-const wlanRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
-  method: 'GET',
-  headers: { 'Content-Type': 'application/json' },
-  agent
-});
+    const netJson = await netRes.json();
+    const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson; // controller versions vary
+    const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
 
-if (!wlanRes.ok) {
-  const txt = await wlanRes.text().catch(() => '');
-  throw new Error(`Failed to get WLAN configs: ${wlanRes.status} ${wlanRes.statusText} ${txt}`);
-}
+    // --- Get existing WLAN configs to obtain ap_group_ids ---
+    const wlanRes = await fetchWithCookies(
+      `${baseUrl}/api/s/${site.name}/rest/wlanconf`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        agent,
+      }
+    );
 
-const wlanJson = await wlanRes.json();
-const wlanConfs = wlanJson.data || [];
+    if (!wlanRes.ok) {
+      const txt = await wlanRes.text().catch(() => '');
+      throw new Error(`Failed to get WLAN configs: ${wlanRes.status} ${wlanRes.statusText} ${txt}`);
+    }
 
-if (wlanConfs.length === 0) {
-  throw new Error('No existing WLAN configurations found to get ap_group_ids from.');
-}
+    const wlanJson = await wlanRes.json();
+    const wlanConfs = wlanJson.data || [];
 
-const apGroupWlan = wlanConfs.find(w => Array.isArray(w.ap_group_ids) && w.ap_group_ids.length > 0) || wlanConfs[0];
-const apGroupIds = apGroupWlan.ap_group_ids;
+    if (wlanConfs.length === 0) {
+      throw new Error('No existing WLAN configurations found to get ap_group_ids from.');
+    }
 
-if (!apGroupIds || !Array.isArray(apGroupIds) || apGroupIds.length === 0) {
-  throw new Error('No ap_group_ids found on existing WLANs.');
-}
+    const apGroupWlan =
+      wlanConfs.find(w => Array.isArray(w.ap_group_ids) && w.ap_group_ids.length > 0) || wlanConfs[0];
+    const apGroupIds = apGroupWlan.ap_group_ids;
 
-// --- Create WLAN in UniFi ---
-const wlanPayload = {
-  name: ssid,
-  ssid: ssid,
-  enabled: true,
-  security: 'wpapsk',
-  wpa: 2,
-  wpa_mode: 'wpa2',
-  x_passphrase: pass,
-  ap_group_ids: apGroupIds,
-  ap_group_mode: 'all'
-};
+    if (!apGroupIds || !Array.isArray(apGroupIds) || apGroupIds.length === 0) {
+      throw new Error('No ap_group_ids found on existing WLANs.');
+    }
 
-// Attach the WLAN to the VLAN/network. Try common field names if available
-if (networkId) {
-  wlanPayload.networkconf_id = networkId;
-} else {
-  wlanPayload.vlan = parseInt(vlanId, 10);
-}
+    // --- Create WLAN in UniFi ---
+    const wlanPayload = {
+      name: ssid,
+      ssid: ssid,
+      enabled: true,
+      security: 'wpapsk',
+      wpa: 2,
+      wpa_mode: 'wpa2',
+      x_passphrase: pass,
+      ap_group_ids: apGroupIds,
+      ap_group_mode: 'all',
+    };
 
-const wlanCreateRes = await fetchWithCookies(`${baseUrl}/api/s/${site.name}/rest/wlanconf`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(wlanPayload),
-  agent
-});
+    // Attach the WLAN to the VLAN/network. Try common field names if available
+    if (networkId) {
+      wlanPayload.networkconf_id = networkId;
+    } else {
+      wlanPayload.vlan = parseInt(vlanId, 10);
+    }
 
-if (!wlanCreateRes.ok) {
-  const txt = await wlanCreateRes.text().catch(() => '');
-  throw new Error(`Failed to create wlan: ${wlanCreateRes.status} ${wlanCreateRes.statusText} ${txt}`);
-}
+    const wlanCreateRes = await fetchWithCookies(
+      `${baseUrl}/api/s/${site.name}/rest/wlanconf`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(wlanPayload),
+        agent,
+      }
+    );
 
-// Build Mikrotik script
-const octs = parsedBase.split('.').map(o => parseInt(o, 10));
-const gateway = `${octs[0]}.${octs[1]}.${octs[2]}.1`;
-const poolStart = `${octs[0]}.${octs[1]}.${octs[2]}.100`;
-const poolEnd = `${octs[0]}.${octs[1]}.${octs[2]}.250`;
-const networkCidr = `${octs[0]}.${octs[1]}.${octs[2]}.0/24`;
+    if (!wlanCreateRes.ok) {
+      const txt = await wlanCreateRes.text().catch(() => '');
+      throw new Error(`Failed to create wlan: ${wlanCreateRes.status} ${wlanCreateRes.statusText} ${txt}`);
+    }
 
-const mikrotikScript = `# Paste into gateway (automatically generated)
+    // Build Mikrotik script with gatewayNetworkIp and interfaceName
+    const octs = parsedBase.split('.').map(o => parseInt(o, 10));
+    const gateway = `${octs[0]}.${octs[1]}.${octs[2]}.1`;
+    const poolStart = `${octs[0]}.${octs[1]}.${octs[2]}.100`;
+    const poolEnd = `${octs[0]}.${octs[1]}.${octs[2]}.250`;
+    const networkCidr = `${octs[0]}.${octs[1]}.${octs[2]}.0/24`;
+
+    // Prepare comment line (sanitize newlines)
+    const commentLine = comment ? ` comment=${comment.replace(/\n/g, ' ').trim()}` : '';
+
+    const mikrotikScript = `
 /interface vlan
-add interface=GuestNet-Bridge name=${networkName} vlan-id=${vlanId}
+add interface=${interfaceName} name=${networkName} vlan-id=${vlanId}
 
 /ip pool
 add name=${networkName}-Pool ranges=${poolStart}-${poolEnd}
@@ -356,19 +385,22 @@ add name=${networkName}-Pool ranges=${poolStart}-${poolEnd}
 add address-pool=${networkName}-Pool authoritative=after-2sec-delay disabled=no interface=${networkName} lease-time=1d name=${networkName}
 
 /ip address
-add address=${gateway}/24 comment=PrivateVLAN interface=${networkName} network=${parsedBase}
+add address=${gateway}/24${commentLine} interface=${networkName} network=${parsedBase}
 
 /ip dhcp-server network
-add address=${networkCidr} comment=PrivateVLAN dns-server=${gateway} domain=nexuswifi.com gateway=${gateway}
+add address=${networkCidr} ${commentLine} dns-server=${gateway} domain=nexuswifi.com gateway=${gateway}
 
 /ip firewall nat
-add action=masquerade chain=srcnat comment=PrivateVLAN src-address=${networkCidr}
+add action=masquerade chain=srcnat ${commentLine} src-address=${networkCidr}
 
 /ip firewall filter
 add action=drop chain=forward dst-address=10.11.0.0/21 src-address=${networkCidr}
+
+/ip firewall filter
+add action=drop chain=forward dst-address=${networkCidr} src-address=10.11.0.0/21
 `;
 
-res.json({ script: mikrotikScript });
+    res.json({ script: mikrotikScript });
   } catch (err) {
     console.error('[Create VLAN Error]', err.message);
     res.status(500).json({ error: `❌ Failed to create VLAN: ${err.message}` });

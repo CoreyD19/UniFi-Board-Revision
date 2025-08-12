@@ -132,7 +132,6 @@ async function loadVlanSites() {
     const data = await res.json();
     if (data.sites) {
       vlanSites = data.sites;
-      // Do NOT render full list on load, wait for user input
       vlanSiteList.innerHTML = '';
     }
   } catch (err) {
@@ -140,15 +139,12 @@ async function loadVlanSites() {
   }
 }
 
-// Listen for user input, filter & show matching sites only if input length > 0
 vlanSiteSearch.addEventListener('input', () => {
   const val = vlanSiteSearch.value.trim().toLowerCase();
-
   if (val.length < 1) {
-    vlanSiteList.innerHTML = ''; // Clear list if input empty
+    vlanSiteList.innerHTML = '';
     return;
   }
-
   const filtered = vlanSites.filter(s => s.desc.toLowerCase().includes(val));
   renderVlanSiteList(filtered);
 });
@@ -161,7 +157,6 @@ function renderVlanSiteList(sites) {
     li.dataset.name = site.name;
     li.style.cursor = 'pointer';
     li.addEventListener('click', () => {
-      // Clear previous selection highlight
       Array.from(vlanSiteList.children).forEach(c => c.classList.remove('selected'));
       li.classList.add('selected');
     });
@@ -169,21 +164,42 @@ function renderVlanSiteList(sites) {
   });
 }
 
+// Link VLAN ID fields between UniFi and Gateway VLAN (two-way)
+const vlanIdField = document.getElementById('vlan-id');
+const gatewayVlanIdField = document.getElementById('gateway-vlan-id');
+vlanIdField.addEventListener('input', () => gatewayVlanIdField.value = vlanIdField.value);
+gatewayVlanIdField.addEventListener('input', () => vlanIdField.value = gatewayVlanIdField.value);
+
+// Auto-fill interface name from network name (remove spaces, lowercase, allow manual override)
+const networkNameField = document.getElementById('vlan-network-name');
+const interfaceNameField = document.getElementById('gateway-interface-name');
+interfaceNameField.dataset.manualEdit = false;
+networkNameField.addEventListener('input', () => {
+  if (!interfaceNameField.dataset.manualEdit) {
+    interfaceNameField.value = networkNameField.value.replace(/\s+/g, '').toLowerCase();
+  }
+});
+interfaceNameField.addEventListener('input', () => {
+  interfaceNameField.dataset.manualEdit = true;
+});
 
 // VLAN form submission
 document.getElementById('create-vlan').addEventListener('click', async () => {
-  const vlanId = document.getElementById('vlan-id').value.trim();
-  const networkName = document.getElementById('vlan-network-name').value.trim();
-  const networkIp = document.getElementById('vlan-network-ip').value.trim();
+  const vlanId = vlanIdField.value.trim();
+  const networkName = networkNameField.value.trim();
   const ssid = document.getElementById('vlan-ssid').value.trim();
   const pass = document.getElementById('vlan-password').value.trim();
+
+  const gatewayVlanId = gatewayVlanIdField.value.trim();
+  const interfaceName = interfaceNameField.value.trim();
+  const gatewayNetworkIp = document.getElementById('gateway-network-ip').value.trim();
+  const gatewayComment = document.getElementById('gateway-comment').value.trim();
 
   const errorBox = document.getElementById('vlan-error');
   const scriptBox = document.getElementById('vlan-gateway-script');
   errorBox.textContent = '';
   scriptBox.value = '';
 
-  // Find selected site
   const selectedLi = vlanSiteList.querySelector('li.selected');
   if (!selectedLi) {
     errorBox.textContent = '❌ Please select a site from the list.';
@@ -191,14 +207,15 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
   }
   const siteName = selectedLi.dataset.name;
 
-  // Basic client validation
   const errors = [];
   if (!vlanId || isNaN(vlanId)) errors.push('VLAN ID must be a number.');
   else if (+vlanId < 1 || +vlanId > 4094) errors.push('VLAN ID must be between 1 and 4094.');
   if (!networkName) errors.push('Network Name is required.');
-  if (!networkIp) errors.push('Network IP is required.');
   if (!ssid || ssid.length < 1 || ssid.length > 32) errors.push('SSID must be 1-32 characters.');
   if (!pass || pass.length < 8 || pass.length > 63) errors.push('Password must be 8-63 characters.');
+  if (!interfaceName) errors.push('Interface Name is required.');
+  if (/\s/.test(interfaceName)) errors.push('Interface Name cannot contain spaces.');
+  if (!gatewayNetworkIp) errors.push('Network IP is required for Gateway VLAN.');
 
   if (errors.length) {
     errorBox.textContent = '❌ ' + errors.join(' ');
@@ -211,21 +228,28 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
     const res = await fetch('/create-vlan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteName, vlanId: +vlanId, networkName, networkBase: networkIp, ssid, pass })
+      body: JSON.stringify({
+        siteName,
+        vlanId: +vlanId,
+        networkName,
+        ssid,
+        pass,
+        interfaceName,
+        gatewayNetworkIp,
+        comment: gatewayComment
+      })
     });
 
     const data = await res.json();
 
     if (!res.ok) {
-      // Handle specific VLAN used error cleanly
       if (data.error) {
         try {
-          // Extract JSON object from error string
           const errorMatch = data.error.match(/\{.*\}/s);
           if (errorMatch) {
             const errorObj = JSON.parse(errorMatch[0]);
             if (errorObj.meta?.msg === 'api.err.VlanUsed') {
-              errorBox.textContent = `❌ VLAN ID ${errorObj.meta.vlan} is already in use. Please choose a different VLAN ID.`;
+              errorBox.textContent = `❌ VLAN ID ${errorObj.meta.vlan} is already in use.`;
             } else {
               errorBox.textContent = `❌ ${errorObj.meta?.msg || data.error}`;
             }
@@ -238,17 +262,14 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
       } else {
         errorBox.textContent = '❌ Failed to create VLAN.';
       }
-      scriptBox.value = '';
       return;
     }
 
     errorBox.textContent = '✅ VLAN created successfully.';
-    scriptBox.value = data.script || '';
+    scriptBox.value = (data.script || '') + (gatewayComment ? `\n# ${gatewayComment}` : '');
   } catch (err) {
     errorBox.textContent = '❌ Error creating VLAN.';
-    scriptBox.value = '';
   }
 });
-
-// Load VLAN sites on initial page load
 loadVlanSites();
+
