@@ -428,6 +428,97 @@ add action=drop chain=forward dst-address=${networkCidr} src-address=10.11.0.0/2
   }
 });
 
+app.post('/find-gateway-ip', async (req, res) => {
+  const { siteName } = req.body || {};
+  if (!siteName) return res.status(400).json({ error: 'Site name is required.' });
+
+  // Names to search in order of priority
+  const searchNames = ['ap1', 'sw1', 'switch1', 'sw2', 'switch2'];
+
+  try {
+    await login();
+    const devicesRes = await fetchWithCookies(
+      `${baseUrl}/api/s/${encodeURIComponent(siteName)}/stat/device`,
+      { method: 'GET', headers: { 'Content-Type': 'application/json' }, agent }
+    );
+
+    if (!devicesRes.ok) {
+      const txt = await devicesRes.text().catch(() => '');
+      throw new Error(`Failed to fetch devices: ${devicesRes.status} ${devicesRes.statusText} ${txt}`);
+    }
+
+    const devicesJson = await devicesRes.json();
+    const devices = devicesJson.data || [];
+
+    // Helper to find device by partial name match in order
+    let targetDevice = null;
+    for (const searchTerm of searchNames) {
+      targetDevice = devices.find(dev =>
+        (dev.name && dev.name.toLowerCase().includes(searchTerm)) ||
+        (dev.hostname && dev.hostname.toLowerCase().includes(searchTerm))
+      );
+      if (targetDevice) break;
+    }
+
+    if (!targetDevice) return res.status(404).json({ error: 'No matching device found.' });
+
+    const mac = targetDevice.mac;
+
+    // Run debug command to get gateway IP
+    const debugCmd = {
+      cmd: 'debug',
+      mac,
+      data: 'curl ifconfig.co'
+    };
+
+    const debugRes = await fetchWithCookies(
+      `${baseUrl}/api/s/${encodeURIComponent(siteName)}/cmd/devmgr`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(debugCmd),
+        agent,
+      }
+    );
+
+    if (!debugRes.ok) {
+      const txt = await debugRes.text().catch(() => '');
+      throw new Error(`Failed to run debug command: ${debugRes.status} ${debugRes.statusText} ${txt}`);
+    }
+
+    const debugJson = await debugRes.json();
+
+    // debugJson.data might be the raw output or nested, extract IP string
+    // Usually, output is in debugJson.data[0].data or debugJson.data.data as string
+    let output = '';
+    if (Array.isArray(debugJson.data)) {
+      output = debugJson.data[0]?.data || '';
+    } else if (typeof debugJson.data === 'string') {
+      output = debugJson.data;
+    } else if (debugJson.data && typeof debugJson.data.data === 'string') {
+      output = debugJson.data.data;
+    }
+
+    const ip = output.trim();
+
+    // Validate IP format (basic IPv4)
+    const ipRegex = /(\d{1,3}\.){3}\d{1,3}/;
+    if (!ipRegex.test(ip)) {
+      return res.status(500).json({ error: 'Invalid IP received from device debug output.', rawOutput: output });
+    }
+
+    res.json({ ip, mac, deviceName: targetDevice.name || targetDevice.hostname });
+
+  } catch (err) {
+    console.error('[Find Gateway IP Error]', err);
+    res.status(500).json({ error: 'Failed to find gateway IP.', details: err.message });
+  }
+});
+
+
+
+
+
 // Start server
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {

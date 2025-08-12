@@ -209,8 +209,10 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
 
   const errorBox = document.getElementById('vlan-error');
   const scriptBox = document.getElementById('vlan-gateway-script');
+  const gatewayIpLine = document.getElementById('gateway-ip-line');  // Make sure this exists in your HTML
   errorBox.textContent = '';
   scriptBox.value = '';
+  gatewayIpLine.textContent = '';
 
   const selectedLi = vlanSiteList.querySelector('li.selected');
   if (!selectedLi) {
@@ -279,10 +281,25 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
 
     errorBox.textContent = '✅ VLAN created successfully.';
     scriptBox.value = data.script || '';
+
+    // New part: fetch gateway IP for selected site and show it
+    try {
+      const ipRes = await fetch(`/find-gateway-ip?siteName=${encodeURIComponent(siteName)}`);
+      const ipData = await ipRes.json();
+      if (ipData.ip) {
+        gatewayIpLine.textContent = `Gateway IP found for ${siteName}: ${ipData.ip}`;
+      } else {
+        gatewayIpLine.textContent = `Gateway IP not found for ${siteName}`;
+      }
+    } catch (ipErr) {
+      gatewayIpLine.textContent = 'Error fetching Gateway IP.';
+      console.error('Error fetching gateway IP:', ipErr);
+    }
   } catch (err) {
     errorBox.textContent = '❌ Error creating VLAN.';
   }
 });
+
 
 loadVlanSites();
 

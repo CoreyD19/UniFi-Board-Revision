@@ -118,9 +118,9 @@ pre {
 }
 #vlan-gateway-script {
   width: 100%;
-  height: calc(100vh - 350px);
   resize: none;
   overflow: hidden;
   font-family: monospace;
   font-size: 14px;
+  min-height: 500px;
 }
