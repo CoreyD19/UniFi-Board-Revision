@@ -351,7 +351,9 @@ app.post('/create-vlan', async (req, res) => {
     if (!apGroupIds || !Array.isArray(apGroupIds) || apGroupIds.length === 0) {
       throw new Error('No ap_group_ids found on existing WLANs.');
     }
-
+	const netJson = await netRes.json();
+	const createdNetwork = Array.isArray(netJson) ? netJson[0] : netJson;
+	const networkId = createdNetwork?._id || createdNetwork?.data?._id || createdNetwork?.name;
     // --- Create WLAN in UniFi ---
     const wlanPayload = {
       name: ssid,
@@ -363,6 +365,7 @@ app.post('/create-vlan', async (req, res) => {
       x_passphrase: pass,
       ap_group_ids: apGroupIds,
       ap_group_mode: 'all',
+	  networkconf_id: networkId
     };
 
     if (networkId) {
@@ -427,7 +430,6 @@ add action=drop chain=forward dst-address=${networkCidr} src-address=10.11.0.0/2
     res.status(500).json({ error: `❌ Failed to create VLAN: ${err.message}` });
   }
 });
-
 app.post('/find-gateway-ip', async (req, res) => {
   const { siteName } = req.body || {};
   if (!siteName) return res.status(400).json({ error: 'Site name is required.' });
@@ -456,8 +458,11 @@ app.post('/find-gateway-ip', async (req, res) => {
     }
 
     const devicesJson = await devicesRes.json();
-    const devices = devicesJson.data || [];
+    let devices = devicesJson.data || [];
     if (!devices.length) return res.status(404).json({ error: 'No devices found in site.' });
+
+    // Optional: filter only online devices (uncomment if desired)
+    // devices = devices.filter(d => d.state === 1 || d.connected === true);
 
     // Try each search term in order until success
     for (const searchTerm of searchNames) {
@@ -471,11 +476,11 @@ app.post('/find-gateway-ip', async (req, res) => {
       const mac = targetDevice.mac;
       console.log(`[Find Gateway IP] Trying device: ${targetDevice.name || targetDevice.hostname} (${mac})`);
 
-      // Command for UniFi debug tools
+      // Command for UniFi debug tools - test with echo first
       const debugCmd = {
         cmd: 'debug',
         mac,
-        data: 'curl ifconfig.co'
+        data: 'echo test'  // <-- Change back to 'curl ifconfig.co' after testing
       };
 
       const debugRes = await fetchWithCookies(
@@ -494,6 +499,7 @@ app.post('/find-gateway-ip', async (req, res) => {
       }
 
       const debugJson = await debugRes.json();
+      console.log('[Find Gateway IP] debugJson:', JSON.stringify(debugJson, null, 2));
 
       // Extract debug output
       let output = '';
@@ -527,6 +533,7 @@ app.post('/find-gateway-ip', async (req, res) => {
     res.status(500).json({ error: 'Failed to find gateway IP.', details: err.message });
   }
 });
+
 
 
 
