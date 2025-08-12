@@ -286,4 +286,20 @@ document.getElementById('create-vlan').addEventListener('click', async () => {
 
 loadVlanSites();
 
+document.getElementById('pushGatewayBtn').addEventListener('click', () => {
+  const passInput = document.getElementById('gatewayPass');
+  const errorElem = document.getElementById('pushError');
+
+  const correctPassword = 'N3xusW1f1';
+
+  if (passInput.value === correctPassword) {
+    errorElem.style.display = 'none';
+    alert('Password correct! (Pushing to gateway logic not implemented yet.)');
+    // TODO: Implement push to gateway logic here
+  } else {
+    errorElem.textContent = '❌ Wrong password, please try again.';
+    errorElem.style.display = 'block';
+  }
+});
+
 

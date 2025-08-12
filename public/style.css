@@ -116,3 +116,11 @@ pre {
   background-color: #d44614;
   color: white;
 }
+#scriptBox {
+  width: 100%;
+  height: 70vh; /* 70% of viewport height */
+  resize: vertical; /* allow vertical resizing */
+  overflow: auto;
+  font-family: monospace;
+  font-size: 14px;
+}
