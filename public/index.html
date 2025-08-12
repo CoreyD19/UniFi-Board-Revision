@@ -46,6 +46,11 @@
 
    <!-- VLAN SECTION -->
 <section id="vlan-section" style="display:none;">
+  
+  <h2>Select Site</h2>
+  <input type="text" id="vlan-site-search" placeholder="Search sites..." />
+  <ul id="vlan-site-list"></ul>
+  
   <!-- Unifi VLAN Section -->
   <h2>Unifi VLAN</h2>
   <input type="text" id="vlan-id" placeholder="VLAN ID (e.g. 100)" />
@@ -60,15 +65,11 @@
   <input type="text" id="gateway-network-ip" placeholder="Network IP (e.g. 192.168.50.0)" />
   <input type="text" id="gateway-comment" placeholder="Comment" />
 
-  <h3>Select Site</h3>
-  <input type="text" id="vlan-site-search" placeholder="Search sites..." />
-  <ul id="vlan-site-list"></ul>
-
   <button id="create-vlan">Create VLAN</button>
   <p id="vlan-error" class="error-text"></p>
 
   <h3>Generated Gateway Script</h3>
-  <textarea id="vlan-gateway-script" readonly rows="10"></textarea>
+  <textarea id="vlan-gateway-script" rows="15" cols="80" style="font-family: monospace; white-space: pre-wrap;"></textarea>
 </section>
   </main>
 
